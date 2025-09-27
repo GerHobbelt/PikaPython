@@ -767,7 +767,7 @@ __STATIC_INLINE uint32_t LL_SYSCFG_DFSDM_GetBitstreamClockSourceSelection(void)
 /**
   * @brief  Enables the DFSDM1 or DFSDM2 Delay clock
   * @rmtoll SYSCFG_MCHDLYCR MCHDLYEN      LL_SYSCFG_DFSDM_EnableDelayClock
-  * @param MCHDLY This paramater can be one of the following values
+  * @param MCHDLY This parameter can be one of the following values
   *         @arg @ref LL_SYSCFG_DFSDM1_MCHDLYEN
   *         @arg @ref LL_SYSCFG_DFSDM2_MCHDLYEN
   * @retval None
@@ -780,7 +780,7 @@ __STATIC_INLINE void LL_SYSCFG_DFSDM_EnableDelayClock(uint32_t MCHDLY)
 /**
   * @brief  Disables the DFSDM1 or the DFSDM2 Delay clock
   * @rmtoll SYSCFG_MCHDLYCR MCHDLY1EN      LL_SYSCFG_DFSDM1_DisableDelayClock
-  * @param MCHDLY This paramater can be one of the following values
+  * @param MCHDLY This parameter can be one of the following values
   *         @arg @ref LL_SYSCFG_DFSDM1_MCHDLYEN
   *         @arg @ref LL_SYSCFG_DFSDM2_MCHDLYEN
   * @retval None

@@ -2508,7 +2508,7 @@ void TIM_SelectOnePulseMode(TIM_Module* TIMx, uint16_t TIM_OPMode)
  * @brief  Selects the TIMx Trigger Output Mode.
  * @param TIMx where x can be 1, 2, 3, 4, 5, 6, 7, 8 to select the TIM peripheral.
  * @param TIM_TRGOSource specifies the Trigger Output source.
- *   This paramter can be one of the following values:
+ *   This parameter can be one of the following values:
  *
  *  - For all TIMx
  *     @arg TIM_TRGO_SRC_RESET The UG bit in the TIM_EVTGEN register is used as the trigger output (TRGO).

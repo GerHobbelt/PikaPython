@@ -1617,7 +1617,7 @@ __weak void HAL_ADC_LevelOutOfWindowCallback(ADC_HandleTypeDef* hadc)
 /**
   * @brief  Error ADC callback.
   * @note   In case of error due to overrun when using ADC with DMA transfer 
-  *         (HAL ADC handle paramater "ErrorCode" to state "HAL_ADC_ERROR_OVR"):
+  *         (HAL ADC handle parameter "ErrorCode" to state "HAL_ADC_ERROR_OVR"):
   *         - Reinitialize the DMA using function "HAL_ADC_Stop_DMA()".
   *         - If needed, restart a new ADC conversion using function
   *           "HAL_ADC_Start_DMA()"

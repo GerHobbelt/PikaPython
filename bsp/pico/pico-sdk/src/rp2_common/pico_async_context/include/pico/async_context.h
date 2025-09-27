@@ -245,7 +245,7 @@ static inline void async_context_lock_check(async_context_t *context) {
  *
  * \param context the async_context
  * \param func the function to call
- * \param parm the paramter to pass to the function
+ * \param parm the parameter to pass to the function
  * \return the return value from func
  */
 static inline uint32_t async_context_execute_sync(async_context_t *context, uint32_t (*func)(void *param), void *param) {

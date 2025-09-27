@@ -187,7 +187,7 @@ typedef struct
                             This parameter can be any value of @ref GPIO_pins_define */
 								
     GPIO_CurrentType GPIO_Current; /*!<Driving current of the select pins>.
-										This paramter can be a value of @ref GPIO_CurrentType*/	
+										This parameter can be a value of @ref GPIO_CurrentType*/	
 	
     GPIO_SpeedType GPIO_Slew_Rate; /*!< Specifies the speed for the selected pins.
                                        This parameter can be a value of @ref GPIO_SpeedType */	

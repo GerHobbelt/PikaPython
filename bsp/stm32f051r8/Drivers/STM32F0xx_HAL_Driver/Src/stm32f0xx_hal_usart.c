@@ -498,7 +498,7 @@ HAL_StatusTypeDef HAL_USART_Transmit(USART_HandleTypeDef *husart, uint8_t *pTxDa
       return  HAL_ERROR;
     }
 
-    /* In case of 9bits/No Parity transfer, pTxData buffer provided as input paramter 
+    /* In case of 9bits/No Parity transfer, pTxData buffer provided as input parameter 
        should be aligned on a u16 frontier, as data to be filled into TDR will be 
        handled through a u16 cast. */
     if ((husart->Init.WordLength == USART_WORDLENGTH_9B) && (husart->Init.Parity == USART_PARITY_NONE))
@@ -586,7 +586,7 @@ HAL_StatusTypeDef HAL_USART_Receive(USART_HandleTypeDef *husart, uint8_t *pRxDat
       return  HAL_ERROR;
     }
 
-    /* In case of 9bits/No Parity transfer, pRxData buffer provided as input paramter 
+    /* In case of 9bits/No Parity transfer, pRxData buffer provided as input parameter 
        should be aligned on a u16 frontier, as data to be received from RDR will be 
        handled through a u16 cast. */
     if ((husart->Init.WordLength == USART_WORDLENGTH_9B) && (husart->Init.Parity == USART_PARITY_NONE))
@@ -686,7 +686,7 @@ HAL_StatusTypeDef HAL_USART_TransmitReceive(USART_HandleTypeDef *husart, uint8_t
       return  HAL_ERROR;
     }
 
-    /* In case of 9bits/No Parity transfer, pTxData and pRxData buffers provided as input paramter 
+    /* In case of 9bits/No Parity transfer, pTxData and pRxData buffers provided as input parameter 
        should be aligned on a u16 frontier, as data to be filled into TDR/retrieved from RDR will be 
        handled through a u16 cast. */
     if ((husart->Init.WordLength == USART_WORDLENGTH_9B) && (husart->Init.Parity == USART_PARITY_NONE))
@@ -789,7 +789,7 @@ HAL_StatusTypeDef HAL_USART_Transmit_IT(USART_HandleTypeDef *husart, uint8_t *pT
       return HAL_ERROR;
     }
 
-    /* In case of 9bits/No Parity transfer, pTxData buffer provided as input paramter 
+    /* In case of 9bits/No Parity transfer, pTxData buffer provided as input parameter 
        should be aligned on a u16 frontier, as data to be filled into TDR will be 
        handled through a u16 cast. */
     if ((husart->Init.WordLength == USART_WORDLENGTH_9B) && (husart->Init.Parity == USART_PARITY_NONE))
@@ -851,7 +851,7 @@ HAL_StatusTypeDef HAL_USART_Receive_IT(USART_HandleTypeDef *husart, uint8_t *pRx
       return HAL_ERROR;
     }
 
-    /* In case of 9bits/No Parity transfer, pRxData buffer provided as input paramter 
+    /* In case of 9bits/No Parity transfer, pRxData buffer provided as input parameter 
        should be aligned on a u16 frontier, as data to be received from RDR will be 
        handled through a u16 cast. */
     if ((husart->Init.WordLength == USART_WORDLENGTH_9B) && (husart->Init.Parity == USART_PARITY_NONE))
@@ -923,7 +923,7 @@ HAL_StatusTypeDef HAL_USART_TransmitReceive_IT(USART_HandleTypeDef *husart, uint
       return HAL_ERROR;
     }
 
-    /* In case of 9bits/No Parity transfer, pTxData and pRxData buffers provided as input paramter 
+    /* In case of 9bits/No Parity transfer, pTxData and pRxData buffers provided as input parameter 
        should be aligned on a u16 frontier, as data to be filled into TDR/retrieved from RDR will be 
        handled through a u16 cast. */
     if ((husart->Init.WordLength == USART_WORDLENGTH_9B) && (husart->Init.Parity == USART_PARITY_NONE))
@@ -992,7 +992,7 @@ HAL_StatusTypeDef HAL_USART_Transmit_DMA(USART_HandleTypeDef *husart, uint8_t *p
       return HAL_ERROR;
     }
 
-    /* In case of 9bits/No Parity transfer, pTxData buffer provided as input paramter 
+    /* In case of 9bits/No Parity transfer, pTxData buffer provided as input parameter 
        should be aligned on a u16 frontier, as data copy into TDR will be 
        handled by DMA from a u16 frontier. */
     if ((husart->Init.WordLength == USART_WORDLENGTH_9B) && (husart->Init.Parity == USART_PARITY_NONE))
@@ -1068,7 +1068,7 @@ HAL_StatusTypeDef HAL_USART_Receive_DMA(USART_HandleTypeDef *husart, uint8_t *pR
       return HAL_ERROR;
     }
 
-    /* In case of 9bits/No Parity transfer, pRxData buffer provided as input paramter 
+    /* In case of 9bits/No Parity transfer, pRxData buffer provided as input parameter 
        should be aligned on a u16 frontier, as data copy from RDR will be 
        handled by DMA from a u16 frontier. */
     if ((husart->Init.WordLength == USART_WORDLENGTH_9B) && (husart->Init.Parity == USART_PARITY_NONE))
@@ -1160,7 +1160,7 @@ HAL_StatusTypeDef HAL_USART_TransmitReceive_DMA(USART_HandleTypeDef *husart, uin
       return HAL_ERROR;
     }
 
-    /* In case of 9bits/No Parity transfer, pTxData and pRxData buffers provided as input paramter 
+    /* In case of 9bits/No Parity transfer, pTxData and pRxData buffers provided as input parameter 
        should be aligned on a u16 frontier, as data copy to/from TDR/RDR will be 
        handled by DMA from a u16 frontier. */
     if ((husart->Init.WordLength == USART_WORDLENGTH_9B) && (husart->Init.Parity == USART_PARITY_NONE))
