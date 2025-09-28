@@ -1191,8 +1191,8 @@ static void obj_saveMethodInfo(PikaObj* self, MethodInfo* tInfo) {
         .host_obj = NULL,
     };
     char* name = tInfo->name;
+    char name_buff[PIKA_LINE_BUFF_SIZE / 2] = {0};
     if (NULL == tInfo->name) {
-        char name_buff[PIKA_LINE_BUFF_SIZE / 2] = {0};
         name = strGetFirstToken(name_buff, tInfo->dec, '(');
     }
     /* the first arg_value */
@@ -1397,7 +1397,7 @@ typedef enum {
 
 typedef struct {
     int count;
-    char **completions;
+    char** completions;
 } CompletionList;
 
 typedef struct {
@@ -1407,31 +1407,41 @@ typedef struct {
     char prefix[32];
 } Shell;
 
-const char *dictionary[] = {
-    "import", "PikaStdLib", "from", "high", "low", "Pin", "value", "def", 
-    "PikaStdDevice", "setPin", "enable", "print", "sleep_ms", "read", 
-    "setMode", "setCallBack", "setPull", "as", "MemChecker", "max", "min",
-    "float", "int", "str", "list", "dict", "tuple", "if", "else", 
-    "elif", "for", "while", "break", "continue", "return", "try", "except",
-    "finally", "with", "open", "write", "append", "close", "True", "False", 
-    "None", "self", "class", "init", "len", "range", "input", "output",
-    "config", "setup", "loop", "GPIO", "UART", "I2C", "SPI", "ADC", "PWM",
-    "digitalRead", "digitalWrite", "analogRead", "analogWrite", "time", "datetime",
-    "random", "OS", "sys", "math", "json", "readFile", "writeFile",
-    ""
-};
+const char* dictionary[] = {
+    "import",        "PikaStdLib",  "from",        "high",
+    "low",           "Pin",         "value",       "def",
+    "PikaStdDevice", "setPin",      "enable",      "print",
+    "sleep_ms",      "read",        "setMode",     "setCallBack",
+    "setPull",       "as",          "MemChecker",  "max",
+    "min",           "float",       "int",         "str",
+    "list",          "dict",        "tuple",       "if",
+    "else",          "elif",        "for",         "while",
+    "break",         "continue",    "return",      "try",
+    "except",        "finally",     "with",        "open",
+    "write",         "append",      "close",       "True",
+    "False",         "None",        "self",        "class",
+    "init",          "len",         "range",       "input",
+    "output",        "config",      "setup",       "loop",
+    "GPIO",          "UART",        "I2C",         "SPI",
+    "ADC",           "PWM",         "digitalRead", "digitalWrite",
+    "analogRead",    "analogWrite", "time",        "datetime",
+    "random",        "OS",          "sys",         "math",
+    "json",          "readFile",    "writeFile",   ""};
 
 int dictSize = sizeof(dictionary) / sizeof(dictionary[0]);
 
 static CompletionList filtered_complete = {0, NULL};
 
-void shCompletePrint(CompletionList *completeList, const char *prefix) {
+void shCompletePrint(CompletionList* completeList, const char* prefix) {
     for (int i = 0; i < completeList->count; i++) {
         printf("%s  ", completeList->completions[i]);
     }
 }
 
-void getFilteredCompletions(const char* prefix, const char** dictionary, int dictSize, CompletionList *result) {
+void getFilteredCompletions(const char* prefix,
+                            const char** dictionary,
+                            int dictSize,
+                            CompletionList* result) {
     printf("\n");
     if (result->completions != NULL) {
         for (int i = 0; i < result->count; i++) {
@@ -1464,7 +1474,7 @@ void getFilteredCompletions(const char* prefix, const char** dictionary, int dic
 }
 
 /*free CompletionList*/
-void freeCompletionList(CompletionList *list) {
+void freeCompletionList(CompletionList* list) {
     for (int i = 0; i < list->count; ++i) {
         free(list->completions[i]);
     }
@@ -1481,20 +1491,24 @@ void handleTabCompletion(ShellConfig* shell, char* prefix) {
             return;
         }
 
-        // printf("\n================[fetch : %s ]=====================\n", prefix);
-        getFilteredCompletions(prefix, dictionary, dictSize, &filtered_complete);
+        // printf("\n================[fetch : %s ]=====================\n",
+        // prefix);
+        getFilteredCompletions(prefix, dictionary, dictSize,
+                               &filtered_complete);
 
         if (filtered_complete.count == 1) {
             char* last_space = strrchr(shell->lineBuff, ' ');
             size_t start_pos = 0;
 
             if (last_space != NULL) {
-                /*保留空格以前的内容*/
                 start_pos = last_space - shell->lineBuff + 1;
             }
 
-            memset(shell->lineBuff + start_pos, 0, sizeof(shell->lineBuff) - start_pos);
-            strncpy(shell->lineBuff + start_pos, filtered_complete.completions[0], sizeof(shell->lineBuff) - start_pos - 1);
+            memset(shell->lineBuff + start_pos, 0,
+                   sizeof(shell->lineBuff) - start_pos);
+            strncpy(shell->lineBuff + start_pos,
+                    filtered_complete.completions[0],
+                    sizeof(shell->lineBuff) - start_pos - 1);
             shell->lineBuff[sizeof(shell->lineBuff) - 1] = '\0';
             shell->line_position = strlen(shell->lineBuff);
             shell->line_curpos = shell->line_position;
@@ -1808,7 +1822,8 @@ enum shellCTRL _inner_do_obj_runChar(PikaObj* self,
     if (inputChar == 0x09) {
 #if PIKA_TAB_ENABLE
         if (shell->line_position > 0) {
-            // printf("Current cursor position: %zu, Line position: %zu\n", shell->line_curpos, shell->line_position);
+            // printf("Current cursor position: %zu, Line position: %zu\n",
+            // shell->line_curpos, shell->line_position);
             char* shell_content = NULL;
             char* last_space = strrchr(shell->lineBuff, ' ');
 
@@ -3168,8 +3183,9 @@ Arg* obj_runMethodArg2(PikaObj* self, Arg* methodArg, Arg* arg1, Arg* arg2) {
 Arg* __eventListener_runEvent(PikaEventListener* listener,
                               uintptr_t eventId,
                               Arg* eventData) {
+    pika_debug("event listener: 0x%p", listener);
     PikaObj* handler = pika_eventListener_getEventHandleObj(listener, eventId);
-    pika_debug("event handler: %p", handler);
+    pika_debug("event handler: 0x%p", handler);
     if (NULL == handler) {
         pika_platform_printf(
             "Error: can not find event handler by id: [0x%02" PRIxPTR "]\r\n",
@@ -3177,7 +3193,7 @@ Arg* __eventListener_runEvent(PikaEventListener* listener,
         return NULL;
     }
     Arg* eventCallBack = obj_getArg(handler, "eventCallBack");
-    pika_debug("run event handler: %p", handler);
+    pika_debug("event data: %p", eventData);
     Arg* res = pika_runFunction1(arg_copy(eventCallBack), arg_copy(eventData));
     return res;
 }
@@ -3215,6 +3231,7 @@ PIKA_RES _do_pika_eventListener_send(PikaEventListener* self,
                                      Arg* eventData,
                                      int eventSignal,
                                      PIKA_BOOL pickupWhenNoVM) {
+    pika_assert(NULL != self);
 #if !PIKA_EVENT_ENABLE
     pika_platform_printf("PIKA_EVENT_ENABLE is not enable");
     while (1) {
@@ -3223,6 +3240,8 @@ PIKA_RES _do_pika_eventListener_send(PikaEventListener* self,
     if (NULL != eventData && !_VM_is_first_lock()) {
 #if PIKA_EVENT_THREAD_ENABLE
         _VM_lock_init();
+#elif PIKA_COROUTINE_ENABLE
+        pika_debug("sending arg event with corutine mode");
 #else
         pika_platform_printf(
             "Error: can not send arg event data without thread support\r\n");
@@ -3237,52 +3256,58 @@ PIKA_RES _do_pika_eventListener_send(PikaEventListener* self,
             return PIKA_RES_ERR_RUNTIME_ERROR;
         }
     }
+
+#if !PIKA_COROUTINE_ENABLE  // skip wait for corutine
     /* using multi thread */
-    if (pika_GIL_isInit()) {
-        /* python thread is running */
-        /* wait python thread get first lock */
-        while (1) {
-            if (_VM_is_first_lock()) {
-                break;
-            }
-            if (g_PikaVMState.vm_cnt == 0) {
-                break;
-            }
-            if (pika_GIL_getBareLock() == 0) {
-                break;
-            }
-            pika_platform_thread_yield();
+    if (!pika_GIL_isInit()) {
+        return (PIKA_RES)0;
+    };
+
+    /* python thread is running */
+    /* wait python thread get first lock */
+    while (1) {
+        if (_VM_is_first_lock()) {
+            break;
         }
-        pika_GIL_ENTER();
-#if PIKA_EVENT_THREAD_ENABLE
-        if (!g_PikaVMState.event_thread) {
-            // avoid _VMEvent_pickupEvent() in _time.c as soon as
-            // possible
-            g_PikaVMState.event_thread = pika_platform_thread_init(
-                "pika_event", _thread_event, NULL, PIKA_EVENT_THREAD_STACK_SIZE,
-                PIKA_THREAD_PRIO, PIKA_THREAD_TICK);
-            pika_debug("event thread init");
+        if (g_PikaVMState.vm_cnt == 0) {
+            break;
         }
+        if (pika_GIL_getBareLock() == 0) {
+            break;
+        }
+        pika_platform_thread_yield();
+    }
 #endif
 
-        if (NULL != eventData) {
-            if (PIKA_RES_OK !=
-                __eventListener_pushEvent(self, eventId, eventData)) {
-                goto __gil_exit;
-            }
-        }
-
-        if (pickupWhenNoVM) {
-            int vmCnt = _VMEvent_getVMCnt();
-            if (0 == vmCnt) {
-                /* no vm running, pick up event imediately */
-                pika_debug("vmCnt: %d, pick up imediately", vmCnt);
-                _VMEvent_pickupEvent();
-            }
-        }
-    __gil_exit:
-        pika_GIL_EXIT();
+    pika_GIL_ENTER();
+#if PIKA_EVENT_THREAD_ENABLE
+    if (!g_PikaVMState.event_thread) {
+        // avoid _VMEvent_pickupEvent() in _time.c as soon as
+        // possible
+        g_PikaVMState.event_thread = pika_platform_thread_init(
+            "pika_event", _thread_event, NULL, PIKA_EVENT_THREAD_STACK_SIZE,
+            PIKA_THREAD_PRIO, PIKA_THREAD_TICK);
+        pika_debug("event thread init");
     }
+#endif
+
+    if (NULL != eventData) {
+        if (PIKA_RES_OK !=
+            __eventListener_pushEvent(self, eventId, eventData)) {
+            goto __gil_exit;
+        }
+    }
+
+    if (pickupWhenNoVM) {
+        int vmCnt = _VMEvent_getVMCnt();
+        if (0 == vmCnt) {
+            /* no vm running, pick up event imediately */
+            pika_debug("vmCnt: %d, pick up imediately", vmCnt);
+            _VMEvent_pickupEvent();
+        }
+    }
+__gil_exit:
+    pika_GIL_EXIT();
     return (PIKA_RES)0;
 #endif
 }
