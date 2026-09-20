@@ -123,6 +123,25 @@ char* Cursor_getCleanStmt(Args* outBuffs, char* cmd) {
 static uint8_t Lexer_isError(char* line) {
     Args buffs = {0};
     uint8_t uRes = 0; /* not error */
+    char* stmt = line + strGetIndent(line);
+    char* import_target = NULL;
+    if (strIsStartWith(stmt, "import")) {
+        import_target = stmt + 6;
+    } else if (strIsStartWith(stmt, "from ")) {
+        import_target = strstr(stmt + 5, " import");
+        if (NULL != import_target) {
+            import_target += 7;
+        }
+    }
+    if (NULL != import_target) {
+        while (' ' == *import_target || '\t' == *import_target) {
+            import_target++;
+        }
+        if ('\0' == *import_target) {
+            uRes = 1;
+            goto __exit;
+        }
+    }
     char* sTokenStream = Lexer_getTokenStream(&buffs, line);
     if (NULL == sTokenStream) {
         uRes = 1; /* lex error */
@@ -132,6 +151,7 @@ static uint8_t Lexer_isError(char* line) {
     char* token = sTokenStream;
     char last_type = TOKEN_strEnd;
     char last_value = 0;
+    int8_t bracket_deepth = 0;
     while ('\0' != *token) {
         token++;
         char type = *token++;
@@ -149,6 +169,19 @@ static uint8_t Lexer_isError(char* line) {
               ('}' == value && ':' == last_value)))) {
             uRes = 1;
             break;
+        }
+        if (bracket_deepth > 0 && TOKEN_literal == last_type &&
+            TOKEN_literal == type && last_value >= '0' && last_value <= '9' &&
+            value >= '0' && value <= '9') {
+            uRes = 1;
+            break;
+        }
+        if (TOKEN_devider == type) {
+            if ('(' == value || '[' == value || '{' == value) {
+                bracket_deepth++;
+            } else if (')' == value || ']' == value || '}' == value) {
+                bracket_deepth--;
+            }
         }
         last_type = type;
         last_value = value;
@@ -1758,6 +1791,9 @@ static PIKA_RES _AST_parse_slice(AST* ast, Args* buffs, char* sStmt) {
     }
     char* sSliceList = strsCut(buffs, sLaststmt, '[', ']');
     pika_assert(sSliceList != NULL);
+    if (_Cursor_count(sSliceList, TOKEN_devider, ":", pika_true) > 2) {
+        return PIKA_RES_ERR_SYNTAX_ERROR;
+    }
     sSliceList = strsAppend(buffs, sSliceList, ":");
     int iIndex = 0;
     while (1) {
@@ -1886,8 +1922,17 @@ AST* AST_parseStmt(AST* ast, char* sStmt) {
         Cursor_deinit(&cs);
     }
     /* solve the += -= /= *= stmt */
+    pika_bool bAugmentedAssign = pika_false;
     if (!bLeftExist) {
-        bLeftExist = Suger_selfOperator(&buffs, sStmt, &sRight, &sLeft);
+        bAugmentedAssign =
+            Suger_selfOperator(&buffs, sStmt, &sRight, &sLeft);
+        bLeftExist = bAugmentedAssign;
+    }
+    if (strEqu(sRight, "lambda") || strIsStartWith(sRight, "lambda ") ||
+        strIsStartWith(sRight, "lambda:") ||
+        Cursor_isContain(sRight, TOKEN_keyword, " if ")) {
+        eResult = PIKA_RES_ERR_SYNTAX_ERROR;
+        goto __exit;
     }
 
     /* remove hint */
@@ -1906,12 +1951,24 @@ AST* AST_parseStmt(AST* ast, char* sStmt) {
             strEqu(sLeft, "True") || strEqu(sLeft, "False") ||
             (STMT_reference != eLeftType && STMT_chain != eLeftType &&
              STMT_tuple != eLeftType && STMT_list != eLeftType) ||
+            (bAugmentedAssign &&
+             (STMT_tuple == eLeftType || STMT_list == eLeftType)) ||
             (STMT_list == eLeftType &&
              _Cursor_count(sLeft, TOKEN_operator, "*", pika_false) > 1)) {
             eResult = PIKA_RES_ERR_SYNTAX_ERROR;
             goto __exit;
         }
         AST_setNodeAttr(ast, (char*)"left", sLeft);
+    }
+    if (!bLeftExist &&
+        1 == _Cursor_count(sStmt, TOKEN_devider, ":", pika_true)) {
+        char* sHintTarget = Cursor_splitCollect(&buffs, sStmt, ":", 0);
+        enum StmtType eHintTargetType = Lexer_matchStmtType(sHintTarget);
+        if (STMT_reference != eHintTargetType &&
+            STMT_chain != eHintTargetType) {
+            eResult = PIKA_RES_ERR_SYNTAX_ERROR;
+            goto __exit;
+        }
     }
     /* match statment type */
     eStmtType = Lexer_matchStmtType(sRight);
@@ -1931,8 +1988,15 @@ AST* AST_parseStmt(AST* ast, char* sStmt) {
         }
         AST_setNodeAttr(ast, (char*)"operator", operator);
         char* sRightBuff = strsCopy(&buffs, sRight);
-        char* sSubStmt2 = Cursor_popLastToken(&buffs, &sRightBuff, operator);
-        char* sSubStmt1 = sRightBuff;
+        char* sSubStmt1 = NULL;
+        char* sSubStmt2 = NULL;
+        if (strEqu(operator, "**")) {
+            sSubStmt1 = Cursor_popToken(&buffs, &sRightBuff, operator);
+            sSubStmt2 = sRightBuff;
+        } else {
+            sSubStmt2 = Cursor_popLastToken(&buffs, &sRightBuff, operator);
+            sSubStmt1 = sRightBuff;
+        }
         if (PIKA_RES_OK != AST_parseSubStmt(ast, sSubStmt1) ||
             PIKA_RES_OK != AST_parseSubStmt(ast, sSubStmt2)) {
             eResult = PIKA_RES_ERR_SYNTAX_ERROR;
@@ -2189,6 +2253,8 @@ char* _defGetDefault(Args* outBuffs, char** sDeclearOut_p) {
     char* sDefaultOut = NULL;
     pika_bool bDefaultSeen = pika_false;
     pika_bool bKeywordOnly = pika_false;
+    pika_bool bVarArgsSeen = pika_false;
+    pika_bool bKwArgsSeen = pika_false;
     pika_assert(NULL != sArgList);
     int iArgNum = _Cursor_count(sArgList, TOKEN_devider, ",", pika_true) + 1;
     for (int i = 0; i < iArgNum; i++) {
@@ -2217,9 +2283,22 @@ char* _defGetDefault(Args* outBuffs, char** sDeclearOut_p) {
         }
         char* sParamName =
             Cursor_splitCollect(&buffs, sDefaultKey, ":", 0);
+        uint8_t star_count = 0;
         while ('*' == sParamName[0]) {
             bKeywordOnly = pika_true;
+            star_count++;
             sParamName++;
+        }
+        if (bKwArgsSeen || star_count > 2 ||
+            (1 == star_count && bVarArgsSeen) ||
+            (2 == star_count && bKwArgsSeen)) {
+            goto __exit;
+        }
+        if (1 == star_count) {
+            bVarArgsSeen = pika_true;
+        }
+        if (2 == star_count) {
+            bKwArgsSeen = pika_true;
         }
         if ('\0' == sParamName[0] ||
             args_isArgExist(&paramNames, sParamName)) {
@@ -2279,6 +2358,23 @@ typedef struct {
 static const NormalKeyword normal_keywords[] = {
     {{"while"}, 5}, {{"if"}, 2}, {{"elif"}, 4}};
 
+static pika_bool _Parser_isInBlock(BlockState* blockState,
+                                   char* block1,
+                                   char* block2) {
+    for (int i = 0; i < stack_getTop(blockState->stack); i++) {
+        Arg* block = stack_checkArg(blockState->stack, i);
+        char* block_type = arg_getStr(block);
+        if (strEqu(block_type, block1) ||
+            (NULL != block2 && strEqu(block_type, block2))) {
+            return pika_true;
+        }
+        if (strEqu(block_type, "def") || strEqu(block_type, "class")) {
+            return pika_false;
+        }
+    }
+    return pika_false;
+}
+
 AST* parser_line2Ast(Parser* self, char* sLine) {
     BlockState* blockState = &self->blockState;
     /* line is not exist */
@@ -2291,6 +2387,7 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
     Args buffs = {0};
     int8_t iBlockDeepthNow, iBlockDeepthLast = -1;
     char *sLineStart, *sStmt;
+    char sPreviousBlock[10] = {0};
 
     /* docsting */
     if (strIsStartWith(sLine, "@docstring")) {
@@ -2332,6 +2429,7 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
             }
             char buff[10] = {0};
             char* sBlockType = stack_popStr(blockState->stack, buff);
+            strcpy(sPreviousBlock, sBlockType);
             /* push exit block type to exit_block queue */
             queueObj_pushStr(exit_block_queue, sBlockType);
         }
@@ -2340,6 +2438,16 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
     sLineStart = sLine + (iBlockDeepthNow - blockState->deepth) * 4;
     sStmt = sLineStart;
 
+    if (strEqu(sLineStart, "assert") || strEqu(sLineStart, "nonlocal") ||
+        strIsStartWith(sLineStart, "nonlocal ") ||
+        strEqu(sLineStart, "await") ||
+        strIsStartWith(sLineStart, "await ") ||
+        strIsStartWith(sLineStart, "async for ")) {
+        obj_deinit(oAst);
+        oAst = NULL;
+        goto __exit;
+    }
+
     // "while" "if" "elif"
     for (uint32_t i = 0; i < sizeof(normal_keywords) / sizeof(NormalKeyword);
          i++) {
@@ -2347,6 +2455,13 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
         uint8_t sKeywordLen = normal_keywords[i].length;
         if (strIsStartWith(sLineStart, sKeyword) &&
             (sLineStart[sKeywordLen] == ' ')) {
+            if (strEqu(sKeyword, "elif") &&
+                !strEqu(sPreviousBlock, "if") &&
+                !strEqu(sPreviousBlock, "elif")) {
+                obj_deinit(oAst);
+                oAst = NULL;
+                goto __exit;
+            }
             if (1 !=
                 _Cursor_count(sLineStart, TOKEN_devider, ":", pika_true)) {
                 obj_deinit(oAst);
@@ -2373,6 +2488,11 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
         if ((strIsStartWith(sLineStart, sKeyward)) &&
             ((sLineStart[keyward_size] == ' ') ||
              (sLineStart[keyward_size] == 0))) {
+            if (!_Parser_isInBlock(blockState, "for", "while")) {
+                obj_deinit(oAst);
+                oAst = NULL;
+                goto __exit;
+            }
             AST_setNodeAttr(oAst, sKeyward, "");
             sStmt = "";
             goto __block_matched;
@@ -2391,7 +2511,10 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
             goto __exit;
         }
         char* sArgIn = strsPopToken(list_buffs, &sLineBuff, ' ');
-        if (strEqu(sArgIn, "") || strEqu(sArgIn, "in")) {
+        enum StmtType eTargetType = Lexer_matchStmtType(sArgIn);
+        if (strEqu(sArgIn, "") || strEqu(sArgIn, "in") ||
+            (STMT_reference != eTargetType && STMT_tuple != eTargetType &&
+             STMT_list != eTargetType)) {
             args_deinit(list_buffs);
             obj_deinit(oAst);
             oAst = NULL;
@@ -2420,6 +2543,15 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
     /* else */
     if (strIsStartWith(sLineStart, "else")) {
         if ((sLineStart[4] == ' ') || (sLineStart[4] == ':')) {
+            if (!strEqu(sPreviousBlock, "if") &&
+                !strEqu(sPreviousBlock, "elif") &&
+                !strEqu(sPreviousBlock, "for") &&
+                !strEqu(sPreviousBlock, "while") &&
+                !strEqu(sPreviousBlock, "except")) {
+                obj_deinit(oAst);
+                oAst = NULL;
+                goto __exit;
+            }
             sStmt = "";
             AST_setNodeBlock(oAst, "else");
             stack_pushStr(blockState->stack, "else");
@@ -2441,6 +2573,12 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
     /* except */
     if (strIsStartWith(sLineStart, "except")) {
         if ((sLineStart[6] == ' ') || (sLineStart[6] == ':')) {
+            if (!strEqu(sPreviousBlock, "try") &&
+                !strEqu(sPreviousBlock, "except")) {
+                obj_deinit(oAst);
+                oAst = NULL;
+                goto __exit;
+            }
             sStmt = "";
             AST_setNodeBlock(oAst, "except");
             stack_pushStr(blockState->stack, "except");
@@ -2449,12 +2587,39 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
     }
 #endif
 
+    if (strIsStartWith(sLineStart, "finally") &&
+        (sLineStart[7] == ' ' || sLineStart[7] == ':') &&
+        !strEqu(sPreviousBlock, "try") &&
+        !strEqu(sPreviousBlock, "except")) {
+        obj_deinit(oAst);
+        oAst = NULL;
+        goto __exit;
+    }
+
+    if ((strEqu(sLineStart, "yield") ||
+         strIsStartWith(sLineStart, "yield ")) &&
+        !_Parser_isInBlock(blockState, "def", NULL)) {
+        obj_deinit(oAst);
+        oAst = NULL;
+        goto __exit;
+    }
+
     if (strEqu(sLineStart, "return")) {
+        if (!_Parser_isInBlock(blockState, "def", NULL)) {
+            obj_deinit(oAst);
+            oAst = NULL;
+            goto __exit;
+        }
         AST_setNodeAttr(oAst, "return", "");
         sStmt = "";
         goto __block_matched;
     }
     if (strIsStartWith(sLineStart, "return ")) {
+        if (!_Parser_isInBlock(blockState, "def", NULL)) {
+            obj_deinit(oAst);
+            oAst = NULL;
+            goto __exit;
+        }
         char* lineBuff = strsCopy(&buffs, sLineStart);
         strsPopToken(&buffs, &lineBuff, ' ');
         sStmt = lineBuff;
@@ -2515,6 +2680,14 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
             sDelDir = sLineStart + sizeof("del ") - 1;
         }
         sDelDir = Cursor_getCleanStmt(&buffs, sDelDir);
+        enum StmtType eTargetType = Lexer_matchStmtType(sDelDir);
+        if (STMT_reference != eTargetType && STMT_chain != eTargetType &&
+            STMT_slice != eTargetType && STMT_tuple != eTargetType &&
+            STMT_list != eTargetType) {
+            obj_deinit(oAst);
+            oAst = NULL;
+            goto __exit;
+        }
         AST_setNodeAttr(oAst, "del", sDelDir);
         goto __block_matched;
     }
@@ -2529,6 +2702,12 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
         sDeclare = Cursor_getCleanStmt(&buffs, sDeclare);
         AST_setNodeAttr(oAst, "raw", sDeclare);
         if (!strIsContain(sDeclare, '(') || !strIsContain(sDeclare, ')')) {
+            obj_deinit(oAst);
+            oAst = NULL;
+            goto __exit;
+        }
+        char* sFnName = strsGetFirstToken(&buffs, sDeclare, '(');
+        if (STMT_reference != Lexer_matchStmtType(sFnName)) {
             obj_deinit(oAst);
             oAst = NULL;
             goto __exit;
@@ -2556,6 +2735,12 @@ AST* parser_line2Ast(Parser* self, char* sLine) {
             goto __exit;
         }
         sDeclare = Cursor_getCleanStmt(&buffs, sDeclare);
+        char* sClassName = strsGetFirstToken(&buffs, sDeclare, '(');
+        if (STMT_reference != Lexer_matchStmtType(sClassName)) {
+            obj_deinit(oAst);
+            oAst = NULL;
+            goto __exit;
+        }
         AST_setNodeBlock(oAst, "class");
         AST_setNodeAttr(oAst, "declare", sDeclare);
         stack_pushStr(blockState->stack, "class");
@@ -3379,10 +3564,26 @@ char* _comprehension2Asm(Args* outBuffs,
     return sAsmOut;
 }
 
+static int _ASM_countBlockMarkers(char* pikaAsm) {
+    int count = 0;
+    pika_bool is_line_start = pika_true;
+    for (char* p = pikaAsm; '\0' != *p; p++) {
+        if (is_line_start && 'B' == *p) {
+            count++;
+        }
+        is_line_start = ('\n' == *p);
+    }
+    return count;
+}
+
 char* AST_genAsm(AST* oAST, AST* subAst, Args* outBuffs, char* sPikaAsm) {
     int deepth = obj_getInt(oAST, "deepth");
     Args buffs = {0};
     char* buff = args_getBuff(&buffs, PIKA_SPRINTF_BUFF_SIZE);
+    char* operator = AST_getNodeAttr(subAst, "operator");
+    pika_bool is_short_circuit =
+        NULL != operator &&
+        (strEqu(operator, " and ") || strEqu(operator, " or "));
 
     /* comprehension */
     if (NULL != AST_getNodeAttr(subAst, "list")) {
@@ -3391,13 +3592,37 @@ char* AST_genAsm(AST* oAST, AST* subAst, Args* outBuffs, char* sPikaAsm) {
     }
 
     /* Solve sub stmt */
-    while (1) {
-        QueueObj* subStmt = queueObj_popObj(subAst);
-        if (NULL == subStmt) {
-            break;
-        }
+    if (is_short_circuit) {
+        QueueObj* left = queueObj_popObj(subAst);
+        QueueObj* right = queueObj_popObj(subAst);
+        char control_asm[96] = {0};
+        char temp_name[12] = {0};
+
         obj_setInt(oAST, "deepth", deepth + 1);
-        sPikaAsm = AST_genAsm(oAST, subStmt, &buffs, sPikaAsm);
+        sPikaAsm = AST_genAsm(oAST, left, &buffs, sPikaAsm);
+        obj_setInt(oAST, "deepth", deepth + 1);
+        char* right_asm = AST_genAsm(oAST, right, &buffs, "");
+        int jump_lines = _ASM_countBlockMarkers(right_asm) + 2;
+
+        pika_sprintf(temp_name, "$sc%d", deepth);
+        pika_sprintf(control_asm, "0 OUT %s\n%d REF %s\n%d %s %d\nB%d\n",
+                     temp_name, deepth, temp_name, deepth,
+                     strEqu(operator, " and ") ? "JEZ" : "JNZ", jump_lines,
+                     AST_getBlockDeepthNow(oAST));
+        sPikaAsm = strsAppend(&buffs, sPikaAsm, control_asm);
+        sPikaAsm = strsAppend(&buffs, sPikaAsm, right_asm);
+        pika_sprintf(control_asm, "0 OUT %s\nB%d\n%d REF %s\n", temp_name,
+                     AST_getBlockDeepthNow(oAST), deepth, temp_name);
+        sPikaAsm = strsAppend(&buffs, sPikaAsm, control_asm);
+    } else {
+        while (1) {
+            QueueObj* subStmt = queueObj_popObj(subAst);
+            if (NULL == subStmt) {
+                break;
+            }
+            obj_setInt(oAST, "deepth", deepth + 1);
+            sPikaAsm = AST_genAsm(oAST, subStmt, &buffs, sPikaAsm);
+        }
     }
 
     /* Byte code generate rules */
@@ -3431,6 +3656,9 @@ char* AST_genAsm(AST* oAST, AST* subAst, Args* outBuffs, char* sPikaAsm) {
     /* append the syntax item */
     for (size_t i = 0; i < sizeof(rules_after) / sizeof(GenRule); i++) {
         GenRule rule = rules_after[i];
+        if (is_short_circuit && strEqu(rule.ast, "operator")) {
+            continue;
+        }
         char* sNodeVal = AST_getNodeAttr(subAst, rule.ast);
         if (NULL != sNodeVal) {
             /* e.g. "0 RUN print \n" */

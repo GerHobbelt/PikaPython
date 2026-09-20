@@ -242,6 +242,151 @@ TEST(parser, python3_invalid_syntax_batch_r10) {
         byteCodeFrame_deinit(&bytecode_frame);
     }
 }
+TEST(parser, empty_import_target_returns_syntax_error) {
+    char empty_import[] = "import \n";
+    char empty_from_import[] = "from module import \n";
+    char* sources[] = {empty_import, empty_from_import};
+    for (char* source : sources) {
+        SCOPED_TRACE(source);
+        ByteCodeFrame bytecode_frame = {0};
+        byteCodeFrame_init(&bytecode_frame);
+        EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source),
+                  PIKA_RES_ERR_SYNTAX_ERROR);
+        byteCodeFrame_deinit(&bytecode_frame);
+    }
+}
+TEST(parser, empty_import_target_valid_neighbors) {
+    char source[] =
+        "import module\n"
+        "import module as alias\n"
+        "from module import name\n"
+        "from module import name as alias2\n";
+    ByteCodeFrame bytecode_frame = {0};
+    byteCodeFrame_init(&bytecode_frame);
+    EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source), PIKA_RES_OK);
+    byteCodeFrame_deinit(&bytecode_frame);
+}
+TEST(parser, invalid_block_context_returns_syntax_error) {
+    char orphan_else[] = "else:\n    pass\n";
+    char orphan_elif[] = "elif True:\n    pass\n";
+    char orphan_except[] = "except:\n    pass\n";
+    char orphan_finally[] = "finally:\n    pass\n";
+    char outside_break[] = "break\n";
+    char outside_continue[] = "continue\n";
+    char outside_return[] = "return 1\n";
+    char outside_yield[] = "yield 1\n";
+    char list_missing_comma[] = "x = [1 2]\n";
+    char tuple_missing_comma[] = "x = (1 2)\n";
+    char* sources[] = {
+        orphan_else,     orphan_elif,      orphan_except,
+        orphan_finally,  outside_break,    outside_continue,
+        outside_return,  outside_yield,    list_missing_comma,
+        tuple_missing_comma,
+    };
+    for (char* source : sources) {
+        SCOPED_TRACE(source);
+        ByteCodeFrame bytecode_frame = {0};
+        byteCodeFrame_init(&bytecode_frame);
+        EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source),
+                  PIKA_RES_ERR_SYNTAX_ERROR);
+        byteCodeFrame_deinit(&bytecode_frame);
+    }
+}
+TEST(parser, valid_block_context_neighbors) {
+    char source[] =
+        "def f(value):\n"
+        "    while value:\n"
+        "        if value == 1:\n"
+        "            break\n"
+        "        elif value == 2:\n"
+        "            continue\n"
+        "        else:\n"
+        "            return value\n"
+        "    try:\n"
+        "        raise\n"
+        "    except:\n"
+        "        return 0\n"
+        "for item in [1, 2]:\n"
+        "    pass\n"
+        "else:\n"
+        "    pass\n";
+    ByteCodeFrame bytecode_frame = {0};
+    byteCodeFrame_init(&bytecode_frame);
+    EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source), PIKA_RES_OK);
+    byteCodeFrame_deinit(&bytecode_frame);
+}
+TEST(parser, invalid_declaration_and_target_returns_syntax_error) {
+    char module_nonlocal[] = "nonlocal value\n";
+    char empty_assert[] = "assert\n";
+    char literal_del[] = "del 1\n";
+    char invalid_def_name[] = "def 1():\n    pass\n";
+    char invalid_class_name[] = "class 1:\n    pass\n";
+    char invalid_for_target[] = "for 1 in [1]:\n    pass\n";
+    char param_after_kwargs[] = "def f(**kwargs, value):\n    pass\n";
+    char duplicate_varargs[] = "def f(*args, *more):\n    pass\n";
+    char tuple_augmented[] = "a, b += (1, 2)\n";
+    char literal_annotation[] = "1: int\n";
+    char* sources[] = {
+        module_nonlocal,   empty_assert,       literal_del,
+        invalid_def_name,  invalid_class_name, invalid_for_target,
+        param_after_kwargs, duplicate_varargs, tuple_augmented,
+        literal_annotation,
+    };
+    for (char* source : sources) {
+        SCOPED_TRACE(source);
+        ByteCodeFrame bytecode_frame = {0};
+        byteCodeFrame_init(&bytecode_frame);
+        EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source),
+                  PIKA_RES_ERR_SYNTAX_ERROR);
+        byteCodeFrame_deinit(&bytecode_frame);
+    }
+}
+TEST(parser, valid_declaration_and_target_neighbors) {
+    char source[] =
+        "class Device:\n"
+        "    pass\n"
+        "def f(value, *args, **kwargs):\n"
+        "    assert value\n"
+        "    local: int = value\n"
+        "    del local\n"
+        "for item in [1, 2]:\n"
+        "    pass\n"
+        "value += 1\n";
+    ByteCodeFrame bytecode_frame = {0};
+    byteCodeFrame_init(&bytecode_frame);
+    EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source), PIKA_RES_OK);
+    byteCodeFrame_deinit(&bytecode_frame);
+}
+TEST(parser, invalid_expression_form_returns_syntax_error) {
+    char invalid_lambda[] = "x = lambda:\n";
+    char invalid_conditional[] = "x = 1 if else 2\n";
+    char excessive_slice[] = "x = values[1:2:3:4]\n";
+    char outside_await[] = "await f()\n";
+    char async_for[] = "async for item in []:\n    pass\n";
+    char* sources[] = {invalid_lambda, invalid_conditional, excessive_slice,
+                       outside_await, async_for};
+    for (char* source : sources) {
+        SCOPED_TRACE(source);
+        ByteCodeFrame bytecode_frame = {0};
+        byteCodeFrame_init(&bytecode_frame);
+        EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source),
+                  PIKA_RES_ERR_SYNTAX_ERROR);
+        byteCodeFrame_deinit(&bytecode_frame);
+    }
+}
+TEST(parser, invalid_expression_form_valid_neighbors) {
+    char source[] =
+        "text = 'lambda value if else await async for'\n"
+        "await_result = 1\n"
+        "values = [1, 2, 3]\n"
+        "part = values[0:2:1]\n"
+        "for item in values:\n"
+        "    pass\n";
+    ByteCodeFrame bytecode_frame = {0};
+    byteCodeFrame_init(&bytecode_frame);
+    EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source), PIKA_RES_OK);
+    byteCodeFrame_deinit(&bytecode_frame);
+}
 TEST_RUN_SINGLE_FILE(vm,
                      issue_star_dict,
                      "test/python/issue/issue_star_dict.py")
