@@ -233,7 +233,7 @@
 
 汇总至少 20 个独立问题、最小复现、阶段和后续修复优先级，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R11.4_Task_Report.md)。
 
-## R12
+## R12 [completed]
 
 修复 R11 确认的 20 个解析期/运行期语法处理错误，优先消除空 import 两种形式的 SIGSEGV，再按共同 parser block/token 根因和 runtime 语义合同分批处理；保持非架构改动，正确性阶段允许量化临时资源增量，资源与性能回收独立执行且 VM/runtime 性能优先，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R12_Task_Report.md)。
 
@@ -254,19 +254,63 @@ P0 修复空 import 与 from-import 缺名称在 Suger_import 路径的解析崩
 #### R12.2.3 [completed]
 
 修复附加候选中的非法 lambda、条件表达式、slice、await 与 async for，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R12.2.3_Task_Report.md)。
-### R12.3 [in_progress]
+### R12.3 [completed]
 
 修复默认参数、短路、运算符结合、推导式作用域、解包和局部变量绑定的运行语义，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R12.3_Task_Report.md)。
 
 #### R12.3.1 [completed]
 
 修复 and/or 短路求值与幂运算右结合语义，并补副作用回归，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R12.3.1_Task_Report.md)。
-#### R12.3.2
+#### R12.3.2 [completed]
 
 修复默认参数定义时求值和未绑定局部变量错误合同，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R12.3.2_Task_Report.md)。
-#### R12.3.3
+#### R12.3.3 [completed]
 
 修复推导式作用域、星号解包及定长解包数量/错误类型合同，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R12.3.3_Task_Report.md)。
-### R12.4
+### R12.4 [completed]
 
 运行 default/minimal 隔离回归并独立量化、回收 RAM/Flash 与性能变化，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R12.4_Task_Report.md)。
+
+## R13 [completed]
+
+继续在 PikaPython 已有语法子集范围内批量探测并修复一批解析期语法问题和运行期语义、崩溃或错误可见性问题；不扩大语法能力、不改变 parser/ASM/VM 大架构，每项修复配单元测试，正确性与资源优化分阶段且 VM/runtime 性能优先，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R13_Task_Report.md)。
+
+### R13.1 [completed]
+
+批量差分探测当前子集的解析期与运行期候选，去重 R10-R12 已覆盖语料并固定最小复现和 CPython 3 预期，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R13.1_Task_Report.md)。
+
+### R13.2 [completed]
+
+按共同根因修复已确认问题并为每项行为补充 Linux 单元测试，不扩大语法范围或引入新 VM 指令，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R13.2_Task_Report.md)。
+
+### R13.3 [completed]
+
+同步 core 后隔离 LVGL、网络和非语法组件，运行 default/minimal 定向与必要全量回归，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R13.3_Task_Report.md)。
+
+### R13.4 [completed]
+
+独立量化并优化 RAM、Flash、分配次数和 runtime 影响，保持语义合同且 runtime 性能优先，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R13.4_Task_Report.md)。
+
+## R14 [completed]
+
+继续在 PikaPython 已有语法子集范围内探测并修复一批 runtime 正确性和 VM 热路径性能问题，优先闭环 [#347](https://github.com/pikasTech/PikaPython/issues/347)、[#348](https://github.com/pikasTech/PikaPython/issues/348)、[#349](https://github.com/pikasTech/PikaPython/issues/349) 的函数默认参数、变长参数和 keyword 绑定问题；不扩大语法、不改变 VM 大架构，runtime 性能优先并控制 RAM/Flash，完成任务后将详细报告写入任务报告，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14_Task_Report.md)。
+
+### R14.1 [completed]
+
+复现 #347-#349 并建立普通调用、默认参数、星号解包、keyword 绑定和循环控制的语义、分配与 runtime 基线，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.1_Task_Report.md)。
+
+### R14.2 [completed]
+
+按共同根因修复已确认的运行期错误、崩溃或错误不可见问题，补充 Linux 单元测试并保持现有语法范围，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.2_Task_Report.md)。
+
+### R14.3 [completed]
+
+在语义合同固定后优化函数调用和参数绑定 VM 热路径，优先消除重复扫描、分配和字典操作，并用同机 A/B 验证，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.3_Task_Report.md)。
+
+### R14.4 [completed]
+
+同步 core 后运行 default/minimal 定向与必要全量回归，量化 text/data/bss、分配次数和 runtime，更新 issue 与总报告，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.4_Task_Report.md)。
+
+### R14.5 [completed]
+
+继续解决 [#348](https://github.com/pikasTech/PikaPython/issues/348) 的 VM 性能债务：优化 kwargs 名称恢复中的常量池重复扫描，在不扩大语法、不改变 VM 大架构且不增加常驻 RAM 的前提下完成同机 A/B、default/minimal 资源和语义回归，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.5_Task_Report.md)。

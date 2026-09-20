@@ -1045,6 +1045,7 @@ static Arg* VM_instruction_handler_REF(PikaObj* self,
     char* arg_name = strPointToLastToken(arg_path, '.');
     pika_bool is_temp = pika_false;
     pika_bool is_alloc = pika_false;
+    pika_bool is_unbound = pika_false;
     PikaObj* oBuiltins = NULL;
 
     switch (data[0]) {
@@ -1112,6 +1113,15 @@ static Arg* VM_instruction_handler_REF(PikaObj* self,
     if (NULL == aRes) {
         aRes = args_getArg(oHost->list, arg_name);
     }
+    if (NULL != aRes && ARG_TYPE_UNDEF == arg_getType(aRes)) {
+        PikaVMFrame_setErrorCode(vm, PIKA_RES_ERR_ARG_NO_FOUND);
+        PikaVMFrame_setSysOut(
+            vm, "UnboundLocalError: local variable '%s' referenced before assignment",
+            arg_path);
+        aRes = NULL;
+        is_unbound = pika_true;
+        goto __exit;
+    }
 
     /* find res in host prop */
     if (NULL == aRes) {
@@ -1152,9 +1162,11 @@ __exit:
         obj_deinit(oBuiltins);
     }
     if (NULL == aRes) {
-        PikaVMFrame_setErrorCode(vm, PIKA_RES_ERR_ARG_NO_FOUND);
-        PikaVMFrame_setSysOut(vm, "NameError: name '%s' is not defined",
-                              arg_path);
+        if (!is_unbound) {
+            PikaVMFrame_setErrorCode(vm, PIKA_RES_ERR_ARG_NO_FOUND);
+            PikaVMFrame_setSysOut(vm, "NameError: name '%s' is not defined",
+                                  arg_path);
+        }
     } else {
         aRes = methodArg_setHostObj(aRes, oHost);
         if ((arg_getType(aRes) != ARG_TYPE_METHOD_NATIVE_ACTIVE) && !is_alloc) {
@@ -1358,15 +1370,83 @@ static void _loadLocalsFromArgv(Args* locals, int argc, Arg* argv[]) {
     }
 }
 
+static void _methodMetaKey(char* key, char kind, Method method) {
+    static const char hex[] = "0123456789abcdef";
+    uintptr_t method_addr = (uintptr_t)method;
+    int pos = 2 + sizeof(uintptr_t) * 2;
+    key[0] = '@';
+    key[1] = kind;
+    key[pos] = '\0';
+    while (pos > 2) {
+        key[--pos] = hex[method_addr & 0xf];
+        method_addr >>= 4;
+    }
+}
+
+typedef struct {
+    Args* defaults;
+    Args* local_names;
+} MethodDefinitionMeta;
+
+static void _methodDefinitionMetaDeinit(void* meta_) {
+    MethodDefinitionMeta* meta = meta_;
+    if (NULL != meta->defaults) {
+        args_deinit(meta->defaults);
+    }
+    if (NULL != meta->local_names) {
+        args_deinit(meta->local_names);
+    }
+}
+
+static MethodDefinitionMeta* _methodGetMeta(Arg* method_arg) {
+    char key[2 + sizeof(uintptr_t) * 2 + 1] = {0};
+    _methodMetaKey(key, 'm', methodArg_getPtr(method_arg));
+    return args_getHeapStruct(methodArg_getDefContext(method_arg)->list, key);
+}
+
+static void _loadMethodDefinitionLocals(Args* locals, Arg* method_arg) {
+    MethodDefinitionMeta* meta = _methodGetMeta(method_arg);
+    if (NULL == meta) {
+        return;
+    }
+    if (NULL != meta->defaults) {
+        int defaults_num = args_getSize(meta->defaults);
+        for (int i = 0; i < defaults_num; i++) {
+            Arg* default_arg = args_getArgByIndex(meta->defaults, i);
+            if (!args_isArgExist_hash(locals,
+                                      arg_getNameHash(default_arg))) {
+                args_setArg(locals, arg_copy(default_arg));
+            }
+        }
+    }
+
+    if (NULL != meta->local_names) {
+        int local_num = args_getSize(meta->local_names);
+        for (int i = 0; i < local_num; i++) {
+            Arg* local_name = args_getArgByIndex(meta->local_names, i);
+            if (!args_isArgExist_hash(locals, arg_getNameHash(local_name))) {
+                Arg* unbound = arg_copy(local_name);
+                arg_setType(unbound, ARG_TYPE_UNDEF);
+                args_setArg(locals, unbound);
+            }
+        }
+    }
+}
+
 static void _type_list_parse(FunctionArgsInfo* f) {
     if (f->type_list[0] == 0) {
         f->n_positional = 0;
         return;
     }
-    int8_t iArgc = strCountSign(f->type_list, ',') + 1;
+    int8_t iArgc = 1;
+    int8_t iStar = 0;
+    int8_t iAssign = 0;
+    for (char* p = f->type_list; '\0' != *p; p++) {
+        iArgc += ',' == *p;
+        iStar += '*' == *p;
+        iAssign += '=' == *p;
+    }
     f->n_arg = iArgc;
-    int8_t iStar = strCountSign(f->type_list, '*');
-    int8_t iAssign = strCountSign(f->type_list, '=');
     /* default */
     if (iAssign > 0) {
         iArgc -= iAssign;
@@ -1396,24 +1476,41 @@ static void _type_list_parse(FunctionArgsInfo* f) {
     return;
 }
 
-static char* _kw_get_name(PikaVMFrame* vm, Hash kw_hash) {
+static void _kw_load_names(PikaVMFrame* vm, FunctionArgsInfo* f) {
+    Args* keys = _OBJ2KEYS(f->kw);
+    int unresolved = args_getSize(keys);
+    if (0 == unresolved) {
+        return;
+    }
     ConstPool* const_pool = &(vm->bytecode_frame->const_pool);
     char* const_pool_start = (char*)constPool_getStart(const_pool);
     if (NULL == const_pool_start) {
-        return NULL;
+        return;
     }
     size_t offset = 0;
     while (offset < const_pool->size) {
         char* name = const_pool_start + offset;
-        if (hash_time33(name) == kw_hash) {
-            return name;
+        Hash name_hash = hash_time33(name);
+        Arg* key = args_getArg_hash(keys, name_hash);
+        if (NULL != key) {
+            char buff[32] = {0};
+            char* sHash = fast_itoa(buff, name_hash);
+            if (strEqu(arg_getStr(key), sHash)) {
+                Arg* resolved = arg_setStr(key, "", name);
+                arg_setNameHash(resolved, name_hash);
+                if (resolved != key) {
+                    args_setArg(keys, resolved);
+                }
+                if (0 == --unresolved) {
+                    return;
+                }
+            }
         }
         offset += strGetSize(name) + 1;
     }
-    return NULL;
 }
 
-static void _kw_push(PikaVMFrame* vm, FunctionArgsInfo* f, Arg* call_arg) {
+static void _kw_push(FunctionArgsInfo* f, Arg* call_arg) {
     if (NULL == f->kw) {
         f->kw = New_PikaDict();
     }
@@ -1421,28 +1518,74 @@ static void _kw_push(PikaVMFrame* vm, FunctionArgsInfo* f, Arg* call_arg) {
     Hash kw_hash = call_arg->name_hash;
     char buff[32] = {0};
     _pikaDict_setVal(f->kw, call_arg);
+    f->n_keyword++;
     char* sHash = fast_itoa(buff, kw_hash);
-    char* kw_name = _kw_get_name(vm, kw_hash);
-    args_setStr(_OBJ2KEYS(f->kw), sHash, kw_name == NULL ? sHash : kw_name);
+    Arg* key = arg_newStr(sHash);
+    arg_setNameHash(key, kw_hash);
+    args_setArg(_OBJ2KEYS(f->kw), key);
 }
 
-static void _load_call_arg(PikaVMFrame* vm,
-                           Arg* call_arg,
-                           FunctionArgsInfo* f,
-                           int* i,
-                           int* argc,
-                           Arg* argv[]) {
+static pika_bool _kw_check_positional_overlap(PikaVMFrame* vm,
+                                               FunctionArgsInfo* f) {
+    if (0 == f->n_keyword || 0 != f->n_positional_got) {
+        return pika_false;
+    }
+    int positional = f->n_input - f->n_keyword;
+    char* parameter = f->type_list;
+    if (ARG_TYPE_METHOD_OBJECT == f->method_type) {
+        parameter = strchr(parameter, ',');
+        if (NULL == parameter) {
+            return pika_false;
+        }
+        parameter++;
+    }
+    for (int i = 0; i < positional && '\0' != parameter[0]; i++) {
+        char* end = strchr(parameter, ',');
+        if (NULL == end) {
+            end = parameter + strlen(parameter);
+        }
+        char* default_mark = strchr(parameter, '=');
+        char* name_end =
+            NULL != default_mark && default_mark < end ? default_mark : end;
+        char saved = name_end[0];
+        name_end[0] = '\0';
+        pika_bool duplicate = NULL != pikaDict_get(f->kw, parameter);
+        if (duplicate) {
+            PikaVMFrame_setErrorCode(vm, PIKA_RES_ERR_INVALID_PARAM);
+            PikaVMFrame_setSysOut(
+                vm, "TypeError: got multiple values for argument '%s'",
+                parameter);
+        }
+        name_end[0] = saved;
+        if (duplicate || '\0' == end[0]) {
+            return duplicate;
+        }
+        parameter = end + 1;
+    }
+    return pika_false;
+}
+
+static pika_bool _load_call_arg(PikaVMFrame* vm,
+                                Arg* call_arg,
+                                FunctionArgsInfo* f,
+                                int* i,
+                                int* argc,
+                                Arg* argv[]) {
     /* load the kw arg */
     pika_assert(NULL != call_arg);
     if (arg_getIsKeyword(call_arg)) {
-        _kw_push(vm, f, call_arg);
-        return;
+        _kw_push(f, call_arg);
+        return pika_true;
+    }
+    if (_kw_check_positional_overlap(vm, f)) {
+        arg_deinit(call_arg);
+        return pika_false;
     }
     /* load variable arg */
     if (f->i_arg > f->n_positional + f->n_default) {
         if (f->is_vars) {
             pikaList_append(f->tuple, call_arg);
-            return;
+            return pika_true;
         }
     }
     char* arg_name = strPopLastToken(f->type_list, ',');
@@ -1450,7 +1593,7 @@ static void _load_call_arg(PikaVMFrame* vm,
     arg_name = _kw_pos_to_default_all(f, arg_name, argc, argv, call_arg);
     if (((char*)1) == arg_name) {
         /* load default from pos */
-        return;
+        return pika_true;
     }
     /* load position arg */
     if (_kw_to_pos_one(f, arg_name, argc, argv)) {
@@ -1459,13 +1602,14 @@ static void _load_call_arg(PikaVMFrame* vm,
         /* restore the stack */
         (*i)--;
         stack_pushArg(&(vm->stack), call_arg);
-        return;
+        return pika_true;
     }
     /*load pos from pos */
     arg_setNameHash(call_arg, hash_time33EndWith(arg_name, ':'));
     pika_assert(call_arg != NULL);
     argv[(*argc)++] = call_arg;
     (f->n_positional_got)++;
+    return pika_true;
 }
 
 static uint32_t _get_n_input_with_unpack(PikaVMFrame* vm, int n_used) {
@@ -1546,6 +1690,33 @@ __unpack:
 
 #define vars_or_keys_or_default (f.is_vars || f.is_keys || f.is_default)
 #define METHOD_TYPE_LIST_MAX_LEN PIKA_LINE_BUFF_SIZE * 2
+
+static void _type_list_load_var_names(FunctionArgsInfo* f) {
+    while (pika_true) {
+        char* arg_def = strrchr(f->type_list, ',');
+        if (NULL == arg_def) {
+            arg_def = f->type_list;
+        } else {
+            arg_def++;
+        }
+        if ('*' != arg_def[0]) {
+            return;
+        }
+        if ('*' == arg_def[1]) {
+            f->kw_dict_name = arg_def + 2;
+            f->kw = New_PikaDict();
+        } else {
+            f->var_tuple_name = arg_def + 1;
+            f->tuple = New_pikaTuple();
+        }
+        if (arg_def == f->type_list) {
+            f->type_list[0] = '\0';
+        } else {
+            arg_def[-1] = '\0';
+        }
+    }
+}
+
 static int PikaVMFrame_loadArgsFromMethodArg(PikaVMFrame* vm,
                                              PikaObj* oMethodHost,
                                              Args* aLoclas,
@@ -1555,13 +1726,11 @@ static int PikaVMFrame_loadArgsFromMethodArg(PikaVMFrame* vm,
                                              int iNumUsed) {
     int argc = 0;
     const uint32_t argv_size = sizeof(Arg*) * PIKA_ARG_NUM_MAX;
-    const uint32_t scratch_size = argv_size + METHOD_TYPE_LIST_MAX_LEN * 2;
+    const uint32_t scratch_size = argv_size + METHOD_TYPE_LIST_MAX_LEN;
     uint8_t* scratch = (uint8_t*)pikaMalloc(scratch_size);
     Arg** argv = (Arg**)scratch;
     char* buffs1 = (char*)(scratch + argv_size);
-    char* buffs2 = buffs1 + METHOD_TYPE_LIST_MAX_LEN;
     FunctionArgsInfo f = {0};
-    char* type_list_buff = NULL;
     /* get method type list */
     f.type_list =
         methodArg_getTypeList(aMethod, buffs1, METHOD_TYPE_LIST_MAX_LEN);
@@ -1656,32 +1825,8 @@ static int PikaVMFrame_loadArgsFromMethodArg(PikaVMFrame* vm,
     }
 
     /* create tuple/dict for vars/keys */
-    if (vars_or_keys_or_default) {
-        type_list_buff = strCopy(buffs2, f.type_list);
-        uint8_t n_typelist = strCountSign(type_list_buff, ',') + 1;
-        for (int i = 0; i < n_typelist; i++) {
-            char* arg_def = strPopLastToken(type_list_buff, ',');
-            if (arg_def[0] == '*' && arg_def[1] != '*') {
-                /* get variable tuple name */
-                /* skip the '*' */
-                f.var_tuple_name = arg_def + 1;
-                /* create tuple */
-                if (NULL == f.tuple) {
-                    f.tuple = New_pikaTuple();
-                    /* remove the format arg */
-                    strPopLastToken(f.type_list, ',');
-                }
-                continue;
-            }
-            if (arg_def[0] == '*' && arg_def[1] == '*') {
-                /* get kw dict name */
-                f.kw_dict_name = arg_def + 2;
-                f.kw = New_PikaDict();
-                /* remove the format arg */
-                strPopLastToken(f.type_list, ',');
-                continue;
-            }
-        }
+    if (f.is_vars || f.is_keys) {
+        _type_list_load_var_names(&f);
     }
 
     /* load args */
@@ -1696,10 +1841,13 @@ static int PikaVMFrame_loadArgsFromMethodArg(PikaVMFrame* vm,
         if (NULL == call_arg) {
             call_arg = arg_newNone();
         }
-        _load_call_arg(vm, call_arg, &f, &i, &argc, argv);
+        if (!_load_call_arg(vm, call_arg, &f, &i, &argc, argv)) {
+            break;
+        }
     }
 
     if (f.kw != NULL) {
+        _kw_load_names(vm, &f);
         pikaDict_reverse(f.kw);
     }
 
@@ -1747,6 +1895,9 @@ static int PikaVMFrame_loadArgsFromMethodArg(PikaVMFrame* vm,
         argv[argc++] = call_arg;
     }
     _loadLocalsFromArgv(aLoclas, argc, argv);
+    if (!argType_isNative(f.method_type)) {
+        _loadMethodDefinitionLocals(aLoclas, aMethod);
+    }
 __exit:
     pikaFree(scratch, scratch_size);
     return f.n_arg;
@@ -2990,12 +3141,39 @@ static Arg* VM_instruction_handler_OPT(PikaObj* self,
             goto __exit;
         case '%':
             if ((op.t1 == ARG_TYPE_INT) && (op.t2 == ARG_TYPE_INT)) {
-                op.res = arg_setInt(op.res, "", op.i1 % op.i2);
+                if (0 == op.i2) {
+                    PikaVMFrame_setErrorCode(
+                        vm, PIKA_RES_ERR_OPERATION_FAILED);
+                    PikaVMFrame_setSysOut(
+                        vm, "ZeroDivisionError: integer modulo by zero");
+                    op.res = NULL;
+                    goto __exit;
+                }
+                int64_t mod = 0;
+                if (!(INT64_MIN == op.i1 && -1 == op.i2)) {
+                    mod = op.i1 % op.i2;
+                    if (0 != mod && ((mod < 0) != (op.i2 < 0))) {
+                        mod += op.i2;
+                    }
+                }
+                op.res = arg_setInt(op.res, "", mod);
                 goto __exit;
             }
 #if PIKA_MATH_ENABLE
             if (op.t1 == ARG_TYPE_FLOAT || op.t2 == ARG_TYPE_FLOAT) {
-                op.res = arg_setFloat(op.res, "", fmod(op.f1, op.f2));
+                if (0 == op.f2) {
+                    PikaVMFrame_setErrorCode(
+                        vm, PIKA_RES_ERR_OPERATION_FAILED);
+                    PikaVMFrame_setSysOut(vm,
+                                          "ZeroDivisionError: modulo by zero");
+                    op.res = NULL;
+                    goto __exit;
+                }
+                pika_float mod = fmod(op.f1, op.f2);
+                if (0 != mod && ((mod < 0) != (op.f2 < 0))) {
+                    mod += op.f2;
+                }
+                op.res = arg_setFloat(op.res, "", mod);
                 goto __exit;
             }
 #endif
@@ -3157,11 +3335,40 @@ static Arg* VM_instruction_handler_OPT(PikaObj* self,
     }
     if (data[0] == '/' && data[1] == '/') {
         if ((op.t1 == ARG_TYPE_INT) && (op.t2 == ARG_TYPE_INT)) {
-            op.res = arg_setInt(op.res, "", op.i1 / op.i2);
+            if (0 == op.i2) {
+                PikaVMFrame_setErrorCode(vm,
+                                         PIKA_RES_ERR_OPERATION_FAILED);
+                PikaVMFrame_setSysOut(
+                    vm, "ZeroDivisionError: integer division by zero");
+                op.res = NULL;
+                goto __exit;
+            }
+            if (INT64_MIN == op.i1 && -1 == op.i2) {
+                PikaVMFrame_setErrorCode(vm,
+                                         PIKA_RES_ERR_OPERATION_FAILED);
+                PikaVMFrame_setSysOut(
+                    vm, "OverflowError: integer division overflow");
+                op.res = NULL;
+                goto __exit;
+            }
+            int64_t quotient = op.i1 / op.i2;
+            int64_t remainder = op.i1 % op.i2;
+            if (0 != remainder && ((remainder < 0) != (op.i2 < 0))) {
+                quotient--;
+            }
+            op.res = arg_setInt(op.res, "", quotient);
             goto __exit;
         }
 #if PIKA_MATH_ENABLE
         if ((op.t1 == ARG_TYPE_FLOAT) || (op.t2 == ARG_TYPE_FLOAT)) {
+            if (0 == op.f2) {
+                PikaVMFrame_setErrorCode(vm,
+                                         PIKA_RES_ERR_OPERATION_FAILED);
+                PikaVMFrame_setSysOut(
+                    vm, "ZeroDivisionError: float floor division by zero");
+                op.res = NULL;
+                goto __exit;
+            }
             op.res = arg_setFloat(op.res, "", floor(op.f1 / op.f2));
             goto __exit;
         }
@@ -3262,6 +3469,99 @@ __exit:
     return NULL;
 }
 
+static pika_bool _methodLocalCandidate(char* name) {
+    return NULL != name && '\0' != name[0] && '$' != name[0] &&
+           '@' != name[0] && !strIsContain(name, '.') &&
+           !strIsContain(name, '[');
+}
+
+static void _methodStoreDefinitionMeta(PikaObj* context,
+                                       PikaVMFrame* vm,
+                                       Method method,
+                                       int def_block_deepth) {
+    char key[2 + sizeof(uintptr_t) * 2 + 1] = {0};
+    MethodDefinitionMeta meta = {0};
+    uint32_t default_num = PikaVMFrame_getInputArgNum(vm);
+    if (default_num > 0) {
+        meta.defaults = New_args(NULL);
+        for (uint32_t i = 0; i < default_num; i++) {
+            Arg* default_arg = stack_popArg_alloc(&(vm->stack));
+            arg_setIsKeyword(default_arg, pika_false);
+            args_setArg(meta.defaults, default_arg);
+        }
+    }
+
+    meta.local_names = New_args(NULL);
+    Args* global_names = New_args(NULL);
+    int skip_block_deepth = -1;
+    int method_pc =
+        (uintptr_t)method -
+        (uintptr_t)instructArray_getStart(&vm->bytecode_frame->instruct_array);
+    int bytecode_size = PikaVMFrame_getInstructArraySize(vm);
+    for (int pc = method_pc; pc < bytecode_size;
+         pc += instructUnit_getSize()) {
+        InstructUnit* ins = instructArray_getByOffset(
+            &vm->bytecode_frame->instruct_array, pc);
+        int block_deepth = instructUnit_getBlockDeepth(ins);
+        pika_bool is_new_line = instructUnit_getIsNewLine(ins);
+        if (skip_block_deepth >= 0) {
+            if (is_new_line && block_deepth <= skip_block_deepth) {
+                skip_block_deepth = -1;
+            } else {
+                continue;
+            }
+        }
+        if (is_new_line && block_deepth <= def_block_deepth) {
+            break;
+        }
+
+        enum InstructIndex index = instructUnit_getInstructIndex(ins);
+        char* data = PikaVMFrame_getConstWithInstructUnit(vm, ins);
+        if (PIKA_INS(GLB) == index) {
+            Args buffs = {0};
+            char* names = strsCopy(&buffs, data);
+            while ('\0' != names[0]) {
+                char* name = strPopFirstToken(&names, ',');
+                args_setNone(global_names, name);
+            }
+            strsDeinit(&buffs);
+            continue;
+        }
+        if (PIKA_INS(DEF) == index || PIKA_INS(CLS) == index) {
+            char name[PIKA_NAME_BUFF_SIZE] = {0};
+            strGetFirstToken(name, data, '(');
+            if (_methodLocalCandidate(name)) {
+                args_setNone(meta.local_names, name);
+            }
+            skip_block_deepth = block_deepth;
+            continue;
+        }
+        if ((PIKA_INS(OUT) == index || PIKA_INS(DEL) == index) &&
+            0 == instructUnit_getInvokeDeepth(ins) &&
+            _methodLocalCandidate(data)) {
+            args_setNone(meta.local_names, data);
+        }
+    }
+
+    for (int i = args_getSize(meta.local_names) - 1; i >= 0; i--) {
+        Arg* local_name = args_getArgByIndex(meta.local_names, i);
+        if (args_isArgExist_hash(global_names, arg_getNameHash(local_name))) {
+            args_removeArg(meta.local_names, local_name);
+        }
+    }
+    args_deinit(global_names);
+
+    if (0 == args_getSize(meta.local_names)) {
+        args_deinit(meta.local_names);
+        meta.local_names = NULL;
+    }
+    if (NULL != meta.defaults || NULL != meta.local_names) {
+        _methodMetaKey(key, 'm', method);
+        args_setHeapStruct(context->list, key, meta,
+                           _methodDefinitionMetaDeinit);
+    }
+}
+
 static Arg* __VM_instruction_handler_DEF(PikaObj* self,
                                          PikaVMFrame* vm,
                                          char* data,
@@ -3269,6 +3569,7 @@ static Arg* __VM_instruction_handler_DEF(PikaObj* self,
     int thisBlockDeepth = PikaVMFrame_getBlockDeepthNow(vm);
 
     PikaObj* hostObj = vm->locals;
+    Method method = NULL;
     uint8_t is_in_class = 0;
     /* use RunAs object */
     if (obj_getFlag(vm->locals, OBJ_FLAG_RUN_AS)) {
@@ -3285,6 +3586,7 @@ static Arg* __VM_instruction_handler_DEF(PikaObj* self,
             continue;
         }
         if (instructUnit_getBlockDeepth(ins_unit_now) == thisBlockDeepth + 1) {
+            method = (Method)ins_unit_now;
             if (is_in_class) {
                 class_defineObjectMethod(hostObj, data, (Method)ins_unit_now,
                                          self, vm->bytecode_frame);
@@ -3302,6 +3604,10 @@ static Arg* __VM_instruction_handler_DEF(PikaObj* self,
             break;
         }
         offset += instructUnit_getSize();
+    }
+
+    if (!is_class && NULL != method) {
+        _methodStoreDefinitionMeta(self, vm, method, thisBlockDeepth);
     }
 
     return NULL;

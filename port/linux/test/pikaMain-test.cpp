@@ -316,6 +316,310 @@ TEST(pikaMain, python3_operator_associativity_and_short_circuit) {
     EXPECT_EQ(pikaMemNow(), 0);
 }
 
+TEST(pikaMain, python3_floor_division_and_modulo) {
+    PikaObj* pikaMain = newRootObj("pikaMain", New_PikaMain);
+    VMParameters* globals = obj_run(
+        pikaMain,
+        "floor_left = -3 // 2\n"
+        "mod_left = -3 % 2\n"
+        "floor_right = 3 // -2\n"
+        "mod_right = 3 % -2\n");
+
+    EXPECT_EQ(obj_getInt(globals, "floor_left"), -2);
+    EXPECT_EQ(obj_getInt(globals, "mod_left"), 1);
+    EXPECT_EQ(obj_getInt(globals, "floor_right"), -2);
+    EXPECT_EQ(obj_getInt(globals, "mod_right"), -1);
+
+    obj_deinit(pikaMain);
+    EXPECT_EQ(pikaMemNow(), 0);
+}
+
+#if !PIKA_NANO_ENABLE
+TEST(pikaMain, floor_division_and_modulo_zero_errors) {
+    PikaObj* pikaMain = newRootObj("pikaMain", New_PikaMain);
+    VMParameters* globals = obj_run(
+        pikaMain,
+        "floor_zero = False\n"
+        "mod_zero = False\n"
+        "try:\n"
+        "    ignored = 1 // 0\n"
+        "except ZeroDivisionError:\n"
+        "    floor_zero = True\n"
+        "try:\n"
+        "    ignored = 1 % 0\n"
+        "except ZeroDivisionError:\n"
+        "    mod_zero = True\n");
+
+    EXPECT_TRUE(obj_getBool(globals, "floor_zero"));
+    EXPECT_TRUE(obj_getBool(globals, "mod_zero"));
+
+    obj_deinit(pikaMain);
+    EXPECT_EQ(pikaMemNow(), 0);
+}
+
+TEST(pikaMain, python3_duplicate_position_keyword) {
+    PikaObj* pikaMain = newRootObj("pikaMain", New_PikaMain);
+    VMParameters* globals = obj_run(
+        pikaMain,
+        "def combine(a, b=5):\n"
+        "    return a * 10 + b\n"
+        "def combine_required(a, b):\n"
+        "    return a * 10 + b\n"
+        "def combine_three(a, b, c):\n"
+        "    return a * 100 + b * 10 + c\n"
+        "duplicate_function = False\n"
+        "duplicate_required = False\n"
+        "duplicate_multi = False\n"
+        "duplicate_method = False\n"
+        "try:\n"
+        "    combine(1, a=2)\n"
+        "except TypeError:\n"
+        "    duplicate_function = True\n"
+        "valid_function = combine(1, b=2)\n"
+        "try:\n"
+        "    combine_required(1, a=2)\n"
+        "except TypeError:\n"
+        "    duplicate_required = True\n"
+        "valid_required = combine_required(1, b=4)\n"
+        "try:\n"
+        "    combine_three(1, 2, a=3)\n"
+        "except TypeError:\n"
+        "    duplicate_multi = True\n"
+        "valid_after_multi = combine_three(1, 2, 3)\n"
+        "class Combiner:\n"
+        "    def combine(self, a, b=5):\n"
+        "        return a * 10 + b\n"
+        "combiner = Combiner()\n"
+        "try:\n"
+        "    combiner.combine(1, a=2)\n"
+        "except TypeError:\n"
+        "    duplicate_method = True\n"
+        "valid_method = combiner.combine(1, b=3)\n");
+
+    EXPECT_TRUE(obj_getBool(globals, "duplicate_function"));
+    EXPECT_TRUE(obj_getBool(globals, "duplicate_required"));
+    EXPECT_TRUE(obj_getBool(globals, "duplicate_multi"));
+    EXPECT_TRUE(obj_getBool(globals, "duplicate_method"));
+    EXPECT_EQ(obj_getInt(globals, "valid_function"), 12);
+    EXPECT_EQ(obj_getInt(globals, "valid_required"), 14);
+    EXPECT_EQ(obj_getInt(globals, "valid_after_multi"), 123);
+    EXPECT_EQ(obj_getInt(globals, "valid_method"), 13);
+
+    obj_deinit(pikaMain);
+    EXPECT_EQ(pikaMemNow(), 0);
+}
+#endif
+
+#if !PIKA_NANO_ENABLE
+TEST(pikaMain, python3_default_argument_definition_time) {
+    PikaObj* pikaMain = newRootObj("pikaMain", New_PikaMain);
+    VMParameters* globals = obj_run(
+        pikaMain,
+        "seed = 1\n"
+        "default_calls = 0\n"
+        "def make_default():\n"
+        "    global default_calls\n"
+        "    default_calls += 1\n"
+        "    return []\n"
+        "def use_default(value=seed, items=make_default()):\n"
+        "    items.append(1)\n"
+        "    return value * 100 + len(items)\n"
+        "seed = 2\n"
+        "default_first = use_default()\n"
+        "default_second = use_default()\n"
+        "default_explicit = use_default(3, [])\n"
+        "global_value = 7\n"
+        "def use_global():\n"
+        "    global global_value\n"
+        "    before = global_value\n"
+        "    global_value = 8\n"
+        "    return before\n"
+        "global_before = use_global()\n"
+        "class DefaultOwner:\n"
+        "    def value(self, item=4):\n"
+        "        return item\n"
+        "class_default = DefaultOwner().value()\n");
+
+    EXPECT_EQ(obj_getInt(globals, "default_first"), 101);
+    EXPECT_EQ(obj_getInt(globals, "default_second"), 102);
+    EXPECT_EQ(obj_getInt(globals, "default_explicit"), 301);
+    EXPECT_EQ(obj_getInt(globals, "default_calls"), 1);
+    EXPECT_EQ(obj_getInt(globals, "global_before"), 7);
+    EXPECT_EQ(obj_getInt(globals, "global_value"), 8);
+    EXPECT_EQ(obj_getInt(globals, "class_default"), 4);
+
+    obj_deinit(pikaMain);
+    EXPECT_EQ(pikaMemNow(), 0);
+}
+#endif
+
+TEST(pikaMain, python3_unbound_local_error) {
+    PikaObj* pikaMain = newRootObj("pikaMain", New_PikaMain);
+    obj_run(pikaMain,
+            "value = 7\n"
+            "def read_before_assignment():\n"
+            "    before = value\n"
+            "    value = 8\n"
+            "    return before\n"
+            "read_before_assignment()\n");
+
+    pika_bool found = pika_false;
+    for (int i = 0; i < LOG_BUFF_MAX; i++) {
+        if (strEqu(log_buff[i],
+                   "UnboundLocalError: local variable 'value' referenced "
+                   "before assignment\n")) {
+            found = pika_true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found);
+
+    obj_deinit(pikaMain);
+    EXPECT_EQ(pikaMemNow(), 0);
+}
+
+TEST(pikaMain, python3_definition_scope_neighbors) {
+    PikaObj* pikaMain = newRootObj("pikaMain", New_PikaMain);
+    VMParameters* globals = obj_run(
+        pikaMain,
+        "def read_parameter(value):\n"
+        "    return value\n"
+        "def assigned_before_read():\n"
+        "    value = 6\n"
+        "    return value\n"
+        "outer_value = 9\n"
+        "def outer():\n"
+        "    def inner():\n"
+        "        outer_value = 10\n"
+        "        return outer_value\n"
+        "    return outer_value\n"
+        "parameter_value = read_parameter(5)\n"
+        "assigned_value = assigned_before_read()\n"
+        "nested_value = outer()\n");
+
+    EXPECT_EQ(obj_getInt(globals, "parameter_value"), 5);
+    EXPECT_EQ(obj_getInt(globals, "assigned_value"), 6);
+    EXPECT_EQ(obj_getInt(globals, "nested_value"), 9);
+
+    obj_deinit(pikaMain);
+    EXPECT_EQ(pikaMemNow(), 0);
+}
+
+#if !PIKA_NANO_ENABLE
+TEST(pikaMain, python3_definition_metadata_across_runs) {
+    PikaObj* pikaMain = newRootObj("pikaMain", New_PikaMain);
+    obj_run(pikaMain,
+            "def first(value=11):\n"
+            "    return value\n");
+    obj_run(pikaMain,
+            "def second(value=22):\n"
+            "    return value\n");
+    VMParameters* globals = obj_run(pikaMain,
+                                    "first_value = first()\n"
+                                    "second_value = second()\n");
+
+    EXPECT_EQ(obj_getInt(globals, "first_value"), 11);
+    EXPECT_EQ(obj_getInt(globals, "second_value"), 22);
+
+    obj_deinit(pikaMain);
+    EXPECT_EQ(pikaMemNow(), 0);
+}
+#endif
+
+#if !PIKA_NANO_ENABLE
+TEST(pikaMain, python3_comprehension_scope) {
+    PikaObj* pikaMain = newRootObj("pikaMain", New_PikaMain);
+    VMParameters* globals = obj_run(
+        pikaMain,
+        "i = 41\n"
+        "values = [i * 2 for i in [1, 2, 3]]\n"
+        "after_i = i\n"
+        "none_target = None\n"
+        "none_values = [none_target for none_target in [3, 4]]\n"
+        "missing_values = [j + 1 for j in [1, 2]]\n"
+        "def build(offset):\n"
+        "    j = 50\n"
+        "    items = [offset + j for j in [1, 2]]\n"
+        "    return items[0] * 100 + items[1] * 10 + j\n"
+        "function_value = build(5)\n");
+
+    EXPECT_EQ(obj_getInt(globals, "after_i"), 41);
+    EXPECT_TRUE(obj_isArgExist(globals, "none_target"));
+    EXPECT_EQ(arg_getType(obj_getArg(globals, "none_target")), ARG_TYPE_NONE);
+    EXPECT_FALSE(obj_isArgExist(globals, "j"));
+    EXPECT_EQ(obj_getInt(globals, "function_value"), 720);
+    PikaObj* values = obj_getObj(globals, "values");
+    EXPECT_EQ(pikaList_getInt(values, 0), 2);
+    EXPECT_EQ(pikaList_getInt(values, 1), 4);
+    EXPECT_EQ(pikaList_getInt(values, 2), 6);
+
+    obj_deinit(pikaMain);
+    EXPECT_EQ(pikaMemNow(), 0);
+}
+
+TEST(pikaMain, python3_starred_unpack_assignment) {
+    PikaObj* pikaMain = newRootObj("pikaMain", New_PikaMain);
+    VMParameters* globals = obj_run(
+        pikaMain,
+        "first, *middle, last = [1, 2, 3, 4]\n"
+        "tuple_first, *tuple_middle = (5, 6, 7)\n");
+
+    EXPECT_EQ(obj_getInt(globals, "first"), 1);
+    EXPECT_EQ(obj_getInt(globals, "last"), 4);
+    EXPECT_EQ(obj_getInt(globals, "tuple_first"), 5);
+    PikaObj* middle = obj_getObj(globals, "middle");
+    PikaObj* tuple_middle = obj_getObj(globals, "tuple_middle");
+    EXPECT_EQ(pikaList_getInt(middle, 0), 2);
+    EXPECT_EQ(pikaList_getInt(middle, 1), 3);
+    EXPECT_EQ(pikaList_getInt(tuple_middle, 0), 6);
+    EXPECT_EQ(pikaList_getInt(tuple_middle, 1), 7);
+
+    obj_deinit(pikaMain);
+    EXPECT_EQ(pikaMemNow(), 0);
+}
+
+TEST(pikaMain, python3_unpack_value_errors) {
+    PikaObj* pikaMain = newRootObj("pikaMain", New_PikaMain);
+    VMParameters* globals = obj_run(
+        pikaMain,
+        "too_many = False\n"
+        "too_few = False\n"
+        "star_too_few = False\n"
+        "a = 10\n"
+        "b = 20\n"
+        "calls = 0\n"
+        "def unpack_source():\n"
+        "    global calls\n"
+        "    calls += 1\n"
+        "    return [8, 9]\n"
+        "once_a, once_b = unpack_source()\n"
+        "try:\n"
+        "    a, b = [1, 2, 3]\n"
+        "except ValueError:\n"
+        "    too_many = True\n"
+        "try:\n"
+        "    a, b = [1]\n"
+        "except ValueError:\n"
+        "    too_few = True\n"
+        "try:\n"
+        "    a, *rest, b = [1]\n"
+        "except ValueError:\n"
+        "    star_too_few = True\n");
+
+    EXPECT_TRUE(obj_getBool(globals, "too_many"));
+    EXPECT_TRUE(obj_getBool(globals, "too_few"));
+    EXPECT_TRUE(obj_getBool(globals, "star_too_few"));
+    EXPECT_EQ(obj_getInt(globals, "a"), 10);
+    EXPECT_EQ(obj_getInt(globals, "b"), 20);
+    EXPECT_EQ(obj_getInt(globals, "calls"), 1);
+    EXPECT_EQ(obj_getInt(globals, "once_a"), 8);
+    EXPECT_EQ(obj_getInt(globals, "once_b"), 9);
+
+    obj_deinit(pikaMain);
+    EXPECT_EQ(pikaMemNow(), 0);
+}
+#endif
+
 TEST(pikaMain, err_scop) {
     /* init */
     g_PikaMemInfo.heapUsedMax = 0;
