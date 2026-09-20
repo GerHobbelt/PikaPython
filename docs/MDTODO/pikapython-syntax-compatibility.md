@@ -326,3 +326,31 @@ P0 修复空 import 与 from-import 缺名称在 Suger_import 路径的解析崩
 ### R14.8 [completed]
 
 修复 Linux Action 的 VALGRIND 未复用网络隔离和超时边界问题，使内存检查与 core TEST 使用同一默认过滤合同并保留显式 filter 覆盖，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.8_Task_Report.md)。
+
+### R14.9 [completed]
+
+修复 benchmark 结果发布因 Linux 构建覆盖 tracked 生成物而无法切换 gh-pages 的 Action 失败，只恢复 tracked 工作树并保留 benchmark 输出，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.9_Task_Report.md)。
+
+### R14.10 [completed]
+
+隔离 Linux core Action 中非语法的 `threading.lock_rlock` 并发竞态崩溃，保持 TEST 与 VALGRIND 默认过滤合同一致并保留显式覆盖，根因由 [Issue #370](https://github.com/pikasTech/PikaPython/issues/370) 跟踪，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.10_Task_Report.md)。
+
+### R14.11 [completed]
+
+隔离 Linux default 配置下依赖 `log_buff` 固定索引的 REPL 成组不稳定测试，保持显式 filter 可复现并由 [Issue #371](https://github.com/pikasTech/PikaPython/issues/371) 跟踪配置感知修复，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.11_Task_Report.md)。
+
+### R14.12 [completed]
+
+修复 [Issue #370](https://github.com/pikasTech/PikaPython/issues/370) 的 Lock 非法双 release 未定义行为和错误不可见问题，拆分 Lock/RLock 单元测试、验证错误后恢复，稳定后恢复 Linux TEST 与 VALGRIND 默认执行，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.12_Task_Report.md)。
+
+### R14.13
+
+跟踪并修复 [Issue #372](https://github.com/pikasTech/PikaPython/issues/372) 的 `optimize_speed` runtime 缓存受 GTest 注册数量和启动分配布局影响问题，定位缓存键、失效与对象生命周期根因，在不改变大架构且资源总体不膨胀的前提下增加稳定回归，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.13_Task_Report.md)。
+
+### R14.14 [completed]
+
+增加代表嵌入式对象、属性、方法、分支和数值状态更新的复合 runtime benchmark；先用多轮统计与 gprof 定位 VM 热点，再实施不改变大架构的性能优化，并以交错 A/B、控制基准、分配次数和 text/data/bss 验证总体资源不膨胀，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.14_Task_Report.md)。
+
+### R14.15 [completed]
+
+增加排除 parser 时间并校验结果的 Fibonacci runtime benchmark，使用仓库现有 gprof/Callgrind 工具定位 fib workload 热点，只实施不改变 VM 大架构且资源总体不膨胀的优化，并完成同配置 A/B、单元测试和 Linux 回归，完成任务后将详细报告写入[任务报告](./details/pikapython-syntax-compatibility/R14.15_Task_Report.md)。
