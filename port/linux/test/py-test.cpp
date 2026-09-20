@@ -322,6 +322,46 @@ TEST(parser, comparison_and_exception_valid_neighbors) {
     EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source), PIKA_RES_OK);
     byteCodeFrame_deinit(&bytecode_frame);
 }
+
+TEST(parser, typed_except_invalid_forms) {
+    char invalid_try[] = "try value:\n    pass\nexcept:\n    pass\n";
+    char missing_type[] = "try:\n    pass\nexcept as err:\n    pass\n";
+    char missing_alias[] =
+        "try:\n    pass\nexcept ValueError as:\n    pass\n";
+    char tuple_type[] =
+        "try:\n    pass\nexcept (TypeError, ValueError):\n    pass\n";
+    char except_after_bare[] =
+        "try:\n    pass\nexcept:\n    pass\nexcept ValueError:\n    pass\n";
+    char duplicate_as[] =
+        "try:\n    pass\nexcept ValueError as first as second:\n    pass\n";
+    char* sources[] = {invalid_try,       missing_type, missing_alias,
+                       tuple_type,        except_after_bare,
+                       duplicate_as};
+    for (char* source : sources) {
+        SCOPED_TRACE(source);
+        ByteCodeFrame bytecode_frame = {0};
+        byteCodeFrame_init(&bytecode_frame);
+        EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source),
+                  PIKA_RES_ERR_SYNTAX_ERROR);
+        byteCodeFrame_deinit(&bytecode_frame);
+    }
+}
+
+TEST(parser, typed_except_valid_neighbors) {
+    char source[] =
+        "try:\n"
+        "    raise ValueError\n"
+        "except TypeError:\n"
+        "    result = 1\n"
+        "except ValueError as err:\n"
+        "    result = isinstance(err, ValueError)\n"
+        "except:\n"
+        "    result = 3\n";
+    ByteCodeFrame bytecode_frame = {0};
+    byteCodeFrame_init(&bytecode_frame);
+    EXPECT_EQ(pika_lines2Bytes(&bytecode_frame, source), PIKA_RES_OK);
+    byteCodeFrame_deinit(&bytecode_frame);
+}
 TEST(parser, valid_block_context_neighbors) {
     char source[] =
         "def f(value):\n"
@@ -390,11 +430,18 @@ TEST(parser, valid_declaration_and_target_neighbors) {
 TEST(parser, invalid_expression_form_returns_syntax_error) {
     char invalid_lambda[] = "x = lambda:\n";
     char invalid_conditional[] = "x = 1 if else 2\n";
+    char unsupported_slice_step[] = "x = values[0:2:1]\n";
+    char unsupported_negative_slice_step[] = "x = values[::-1]\n";
     char excessive_slice[] = "x = values[1:2:3:4]\n";
     char outside_await[] = "await f()\n";
     char async_for[] = "async for item in []:\n    pass\n";
-    char* sources[] = {invalid_lambda, invalid_conditional, excessive_slice,
-                       outside_await, async_for};
+    char* sources[] = {invalid_lambda,
+                       invalid_conditional,
+                       unsupported_slice_step,
+                       unsupported_negative_slice_step,
+                       excessive_slice,
+                       outside_await,
+                       async_for};
     for (char* source : sources) {
         SCOPED_TRACE(source);
         ByteCodeFrame bytecode_frame = {0};
@@ -409,7 +456,7 @@ TEST(parser, invalid_expression_form_valid_neighbors) {
         "text = 'lambda value if else await async for'\n"
         "await_result = 1\n"
         "values = [1, 2, 3]\n"
-        "part = values[0:2:1]\n"
+        "part = values[0:2]\n"
         "for item in values:\n"
         "    pass\n";
     ByteCodeFrame bytecode_frame = {0};

@@ -400,14 +400,23 @@ static PIKA_RES _obj_setArg(PikaObj* self,
                             uint8_t is_copy) {
     pika_assert(obj_checkAlive(self));
     /* setArg would copy arg */
+#if PIKA_NANO_ENABLE
     PikaObj* host = obj_getHostObj(self, argPath);
+    char* sArgName = strPointToLastToken(argPath, '.');
+#else
+    PikaObj* host = self;
+    char* sArgName = argPath;
+    if (NULL != strchr(argPath, '.')) {
+        host = obj_getHostObj(self, argPath);
+        sArgName = strPointToLastToken(argPath, '.');
+    }
+#endif
     PikaObj* oNew = NULL;
     pika_bool bNew = pika_false;
     if (NULL == host) {
         /* object no found */
         return PIKA_RES_ERR_ARG_NO_FOUND;
     }
-    char* sArgName = strPointToLastToken(argPath, '.');
     Arg* aNew;
     if (is_copy) {
         aNew = arg_copy(arg);
@@ -933,6 +942,11 @@ static PikaObj* _obj_getObjWithKeepDeepth(PikaObj* self,
         return self;
     }
     pika_assert(strGetSize(objPath) < PIKA_PATH_BUFF_SIZE);
+#if !PIKA_NANO_ENABLE
+    if (1 == keepDeepth && NULL == strchr(objPath, '.')) {
+        return self;
+    }
+#endif
     strcpy(objPath_buff, objPath);
     int32_t token_num = strGetTokenNum(objPath, '.');
     PikaObj* objThis = self;
@@ -3601,11 +3615,14 @@ char* builtins_str(PikaObj* self, Arg* arg) {
 
 PikaObj* New_builtins_RangeObj(Args* args);
 Arg* builtins_iter(PikaObj* self, Arg* arg) {
-    pika_assert(NULL != arg);
     /* object */
     pika_bool bIsTemp = pika_false;
     PikaObj* oArg = _arg_to_obj(arg, &bIsTemp);
-    pika_assert(NULL != oArg);
+    if (NULL == oArg) {
+        obj_setSysOut(self, "TypeError: object is not iterable");
+        obj_setErrorCode(self, PIKA_RES_ERR_INVALID_PARAM);
+        return NULL;
+    }
     NewFun _clsptr = (NewFun)oArg->constructor;
     if (_clsptr == New_builtins_RangeObj) {
         /* found RangeObj, return directly */
@@ -4530,6 +4547,9 @@ void _do_vsysOut(char* fmt, va_list args) {
 
 void obj_setSysOut(PikaObj* self, char* fmt, ...) {
     if (NULL != self->vmFrame) {
+#if PIKA_SYNTAX_EXCEPTION_ENABLE
+        pikaVMFrame_setExceptionTypeFromName(self->vmFrame, fmt);
+#endif
         if (self->vmFrame->error.code == PIKA_RES_OK) {
             self->vmFrame->error.code = PIKA_RES_ERR_RUNTIME_ERROR;
         }
