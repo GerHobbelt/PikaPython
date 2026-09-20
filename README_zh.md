@@ -3,6 +3,11 @@
 </p>
 <h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">PikaPython</h1>
 <h4 align="center">跨平台的超轻量级嵌入式 Python 引擎</h4>
+
+> PikaPython V2 已发布，提供重新设计的内核、更高的执行性能、更低的 Flash 与静态
+> RAM 占用，以及统一项目 CLI 和 Code Agent 开发流程。
+> [前往 PikaPython V2](https://github.com/pikasTech/PikaPython/tree/v2)。
+
 <p align="center">
 	<a href="https://gitee.com/lyon1998/pikapython/stargazers"><img src="https://gitee.com/lyon1998/pikapython/badge/star.svg?theme=gvp"></a>
 	<a href="https://gitee.com/lyon1998/pikapython/members"><img src="https://gitee.com/lyon1998/pikapython/badge/fork.svg?theme=gvp"></a>

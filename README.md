@@ -3,6 +3,11 @@
 </p>
 <h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">PikaPython</h1>
 <h4 align="center">Cross platform ultra lightweight embedded Python engine</h4>
+
+> PikaPython V2 is now available with a redesigned kernel, higher execution performance,
+> lower Flash and static RAM usage, a unified project CLI, and Code Agent workflows.
+> [Explore PikaPython V2](https://github.com/pikasTech/PikaPython/tree/v2).
+
 <p align="center">
 	<a href="https://gitee.com/lyon1998/pikapython/stargazers"><img src="https://gitee.com/lyon1998/pikapython/badge/star.svg?theme=gvp"></a>
 	<a href="https://gitee.com/lyon1998/pikapython/members"><img src="https://gitee.com/lyon1998/pikapython/badge/fork.svg?theme=gvp"></a>
