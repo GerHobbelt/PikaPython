@@ -656,9 +656,9 @@ __exit:
     return aMethod;
 }
 
-Arg* _obj_getMethodArgWithFullPath(PikaObj* obj,
-                                   char* methodPath,
-                                   Arg* arg_reg) {
+static Arg* _obj_getMethodArgWithFullPath(PikaObj* obj,
+                                          char* methodPath,
+                                          Arg* arg_reg) {
     char* methodName = strPointToLastToken(methodPath, '.');
     return _obj_getMethodArg(obj, methodName, arg_reg);
 }
@@ -935,18 +935,18 @@ static PikaObj* _obj_getObjWithKeepDeepth(PikaObj* self,
                                           char* objPath,
                                           pika_bool* pIsTemp,
                                           int32_t keepDeepth) {
-    char objPath_buff[PIKA_PATH_BUFF_SIZE];
-    char* objPath_ptr = objPath_buff;
     pika_assert(NULL != objPath);
     if ('.' == objPath[0] && '\0' == objPath[1]) {
         return self;
     }
-    pika_assert(strGetSize(objPath) < PIKA_PATH_BUFF_SIZE);
 #if !PIKA_NANO_ENABLE
     if (1 == keepDeepth && NULL == strchr(objPath, '.')) {
         return self;
     }
 #endif
+    char objPath_buff[PIKA_PATH_BUFF_SIZE];
+    char* objPath_ptr = objPath_buff;
+    pika_assert(strGetSize(objPath) < PIKA_PATH_BUFF_SIZE);
     strcpy(objPath_buff, objPath);
     int32_t token_num = strGetTokenNum(objPath, '.');
     PikaObj* objThis = self;
@@ -1028,11 +1028,12 @@ char* methodArg_getTypeList(Arg* method_arg, char* buffs, size_t size) {
     }
     char* method_dec = methodArg_getDec(method_arg);
     pika_assert(strGetSize(method_dec) <= size);
-    if (strGetSize(method_dec) > size) {
+    if (strGetSize(method_dec) >= size) {
         pika_platform_printf(
-            "OverFlowError: please use bigger PIKA_LINE_BUFF_SIZE\r\n");
-        while (1) {
-        }
+            "FatalError: PIKA_LINE_BUFF_SIZE %u < required %u; stopped\r\n",
+            (unsigned int)size,
+            (unsigned int)(strGetSize(method_dec) + 1));
+        pika_platform_fatal_handle();
     }
     char* res = strCut(buffs, method_dec, '(', ')');
     return res;
@@ -3247,9 +3248,9 @@ PIKA_RES _do_pika_eventListener_send(PikaEventListener* self,
                                      PIKA_BOOL pickupWhenNoVM) {
     pika_assert(NULL != self);
 #if !PIKA_EVENT_ENABLE
-    pika_platform_printf("PIKA_EVENT_ENABLE is not enable");
-    while (1) {
-    };
+    pika_platform_printf("FatalError: event API requires PIKA_EVENT_ENABLE; "
+                         "stopped\r\n");
+    pika_platform_fatal_handle();
 #else
     if (NULL != eventData && !_VM_is_first_lock()) {
 #if PIKA_EVENT_THREAD_ENABLE
@@ -3346,9 +3347,9 @@ Arg* pika_eventListener_sendSignalAwaitResult(PikaEventListener* self,
      * Await result from event.
      * need implement `pika_platform_thread_delay()` to support thread switch */
 #if !PIKA_EVENT_ENABLE
-    pika_platform_printf("PIKA_EVENT_ENABLE is not enable");
-    while (1) {
-    };
+    pika_platform_printf("FatalError: event API requires PIKA_EVENT_ENABLE; "
+                         "stopped\r\n");
+    pika_platform_fatal_handle();
 #else
     extern volatile VMState g_PikaVMState;
     int tail = g_PikaVMState.cq.tail;
@@ -4509,13 +4510,9 @@ int pika_sprintf(char* buff, char* fmt, ...) {
     va_end(args);
     if (res >= PIKA_SPRINTF_BUFF_SIZE) {
         pika_platform_printf(
-            "OverflowError: sprintf buff size overflow, please use bigger "
-            "PIKA_SPRINTF_BUFF_SIZE\r\n");
-        pika_platform_printf("Info: buff size request: %d\r\n", res);
-        pika_platform_printf("Info: buff size now: %d\r\n",
-                             PIKA_SPRINTF_BUFF_SIZE);
-        while (1)
-            ;
+            "FatalError: PIKA_SPRINTF_BUFF_SIZE %d < required %d; stopped\r\n",
+            PIKA_SPRINTF_BUFF_SIZE, res + 1);
+        pika_platform_fatal_handle();
     }
     return res;
 }
@@ -4553,7 +4550,7 @@ void obj_setSysOut(PikaObj* self, char* fmt, ...) {
         if (self->vmFrame->error.code == PIKA_RES_OK) {
             self->vmFrame->error.code = PIKA_RES_ERR_RUNTIME_ERROR;
         }
-        if (self->vmFrame->vm_thread->try_state == TRY_STATE_INNER) {
+        if (self->vmFrame->vm_thread->try_state != TRY_STATE_NONE) {
             return;
         }
     }
